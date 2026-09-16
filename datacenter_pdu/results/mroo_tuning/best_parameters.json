@@ -1,0 +1,66 @@
+{
+  "eta": 1e-05,
+  "kappa_initial_scalar": 0.1,
+  "kappa_initial_vector": [
+    0.1,
+    0.1,
+    0.1
+  ],
+  "selection_method": "fixed_paper_parameters_no_tuning",
+  "evaluated_rows": 8928,
+  "fixed_parameters": {
+    "budget": 3.5,
+    "upper_bounds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "u_initial": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "lambda_1": 1.0,
+    "lambda_2": 1.0,
+    "rho": 1.0,
+    "entities": 3,
+    "exposure_seed": 7,
+    "exposure_file": null
+  },
+  "full_trace_summary": {
+    "horizon": 8928,
+    "budget": 3.5,
+    "upper_bounds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "u_initial": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "eta": 1e-05,
+    "lambda_1": 1.0,
+    "lambda_2": 1.0,
+    "rho": 1.0,
+    "average_hitting_cost": 0.001940431957981844,
+    "long_term_cost": 0.00010621782646496842,
+    "total_objective": 0.0020466497844468124,
+    "average_switching_magnitude": 0.00018397467210685788,
+    "maximum_average_entity_burden": 0.00010621782646496842,
+    "final_kappa": [
+      0.10000948312754691,
+      0.10000948312754691,
+      0.10000948312754691
+    ]
+  }
+}

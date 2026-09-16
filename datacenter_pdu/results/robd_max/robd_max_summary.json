@@ -1,0 +1,33 @@
+{
+  "algorithm": "ROBD-MAX",
+  "horizon": 1785,
+  "budget": 3.5,
+  "upper_bounds": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "u_initial": [
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5
+  ],
+  "lambda_1": 0.3,
+  "lambda_2": 0.8,
+  "rho": 1.0,
+  "average_hitting_cost": 0.0018545401118781094,
+  "long_term_cost": 0.0025324814838857267,
+  "total_objective": 0.004387021595763836,
+  "average_max_switching_cost": 0.0010062469041855811,
+  "average_total_switching_cost": 0.0043863865993175035,
+  "maximum_average_entity_burden": 0.0025324814838857267,
+  "constant_exposure_vector": [
+    0.5773502691896258,
+    0.5773502691896258,
+    0.5773502691896258
+  ]
+}

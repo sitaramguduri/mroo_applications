@@ -1,0 +1,55 @@
+{
+  "algorithm": "ROBD-SUM",
+  "lambda_1": 0.3,
+  "lambda_2": 0.8,
+  "selection_method": "fixed_neurips_paper_parameters_no_tuning",
+  "evaluated_rows": 8928,
+  "fixed_parameters": {
+    "budget": 3.5,
+    "upper_bounds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "u_initial": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "rho": 1.0,
+    "entities": 3,
+    "seed": 7,
+    "exposure_file": null
+  },
+  "full_trace_summary": {
+    "algorithm": "ROBD-SUM",
+    "horizon": 8928,
+    "budget": 3.5,
+    "upper_bounds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "u_initial": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "lambda_1": 0.3,
+    "lambda_2": 0.8,
+    "rho": 1.0,
+    "average_hitting_cost": 0.001895340184516409,
+    "long_term_cost": 0.0003856580515681131,
+    "total_objective": 0.002280998236084522,
+    "average_sum_switching_cost": 0.000667979339663991,
+    "maximum_average_entity_burden": 0.0003856580515681131
+  }
+}

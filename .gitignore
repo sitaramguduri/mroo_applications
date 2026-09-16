@@ -1,0 +1,7 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore all CSV files
+sigmetrics_mroo/AzureLLMInferenceTrace_code_1week.csv
+sigmetrics_mroo/AzureLLMInferenceTrace_conv_1week.csv
