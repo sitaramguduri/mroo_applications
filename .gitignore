@@ -1,0 +1,20 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore all CSV files
+sigmetrics_mroo/AzureLLMInferenceTrace_code_1week.csv
+sigmetrics_mroo/AzureLLMInferenceTrace_conv_1week.csv
+sigmetrics_mroo_updated/algorithms/new_results/different_weights/constant_weights_w1_0p2_w2_0p3_w3_0p5/beta_1.5_m_15/mroo_full_horizon_lambda1_0p90909091_eta_0p025475892_init_1p6534392em05.csv
+# sigmetrics_mroo_updated/algorithms/new_results/window_beta_m_sweep/rho_1/
+# sigmetrics_mroo_updated/algorithms/new_results/window_beta_m_sweep/constant_weights_w1_0p2_w2_0p3_w3_0p5/
+# sigmetrics_mroo_updated/algorithms/new_results/window_beta_m_sweep/fixed_weights_w1_0p2_w2_0p3_w3_0p5/
+# sigmetrics_mroo_updated/algorithms/new_results/dmd_mroo_movement_analysis/
+# sigmetrics_mroo_updated/algorithms/new_results/different_weights/
+# sigmetrics_mroo_updated/algorithms/new_results/different_regime_weights/
+# sigmetrics_mroo_updated/algorithms/new_results/demand_variation_analysis/
+sigmetrics_mroo_updated/algorithms/new_results/
+sigmetrics_mroo_updated/AzureLLMInferenceTrace_code_1week.csv
+sigmetrics_mroo_updated/AzureLLMInferenceTrace_conv_1week.csv
+sigmetrics_mroo_updated/just_in_case/ 
+
