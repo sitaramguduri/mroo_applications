@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 # ============================================================
-# PATHS
+# 1. PATHS
 # ============================================================
 
 ALGORITHM_DIR = (
@@ -19,306 +19,1076 @@ BASE_RESULT_DIR = (
     ALGORITHM_DIR
     / "new_results"
     / "window_beta_m_sweep"
+    / "rho_7"
+    / "1min_24hour"
     / "fixed_weights_w1_0p2_w2_0p3_w3_0p5"
 )
 
-PLOT_DIR = (
-    BASE_RESULT_DIR
-    / "comparison_shadow_T_17280"
-)
 
-PLOT_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+# ============================================================
+# 2. SETTINGS
+# ============================================================
+
+TARGET_M = 100.0
+
+WINDOW_SIZE = 1440
+
+N_WINDOWS = 100
 
 
 # ============================================================
-# SETTINGS TO COMPARE
+# 3. EXCLUDED FOLDERS
+#
+# Add folders here if you do NOT want them in the plot.
 # ============================================================
 
-EXPERIMENTS = [
-    {
-        "folder": "beta_1p5_m_15_T_17280",
-        "beta": 1.5,
-        "m": 15.0,
-    },
-    {
-        "folder": "beta_15_m_15_T_17280",
-        "beta": 15.0,
-        "m": 15.0,
-    },
-    {
-        "folder": "beta_180_m_15_T_17280",
-        "beta": 180.0,
-        "m": 15.0,
-    },
-    {
-        "folder": "beta_900_m_15_T_17280",
-        "beta": 900.0,
-        "m": 15.0,
-    },
-    {
-        "folder": "beta_1800_m_15_T_17280",
-        "beta": 1800.0,
-        "m": 15.0,
-    },
-]
+EXCLUDED_FOLDERS = {
 
+    "beta_500_m_100_T_1440",
+    "beta_2000_m_100_T_1440",
+    "beta_50_m_100_T_1440",
+    "beta_100_m_100_T_1440",
+    "beta_600_m_100_T_1440",
+    #  "beta_1000_m_100_T_1440",
 
-# ============================================================
-# ALGORITHMS
-# ============================================================
-
-ALGORITHM_ORDER = [
-    "MROO",
-    "S-MROO-MAX",
-    "S-MROO-SUM",
-    "OFFLINE-OPT",
-    "GREEDY",
-]
-
-ALGORITHM_LABELS = {
-    "MROO": "MROO",
-    "S-MROO-MAX": "S-MROO-MAX",
-    "S-MROO-SUM": "S-MROO-SUM",
-    "OFFLINE-OPT": "OPT",
-    "GREEDY": "GRD",
 }
 
 
 # ============================================================
-# LOAD ALL DATA
+# 4. ALGORITHMS TO PLOT
 # ============================================================
 
-frames = []
-
-for setting_id, experiment in enumerate(EXPERIMENTS):
-
-    result_file = (
-        BASE_RESULT_DIR
-        / experiment["folder"]
-        / "combined_algorithm_window_results.csv"
-    )
-
-    if not result_file.exists():
-        raise FileNotFoundError(
-            f"Could not find:\n{result_file}"
-        )
-
-    df = pd.read_csv(result_file).copy()
-
-    df["setting_id"] = setting_id
-    df["setting_label"] = (
-        rf"$\beta={experiment['beta']:g}$"
-        "\n"
-        rf"$m={experiment['m']:g}$"
-    )
-
-    frames.append(df)
-
-all_df = pd.concat(
-    frames,
-    ignore_index=True,
-)
-
-
-# ============================================================
-# AGGREGATE
-# ============================================================
-
-summary = (
-    all_df
-    .groupby(
-        ["setting_id", "setting_label", "algorithm"],
-        as_index=False,
-    )
-    .agg(
-        mean_hitting=("hitting_cost", "mean"),
-        std_hitting=("hitting_cost", "std"),
-        mean_long_term=("long_term_cost", "mean"),
-        std_long_term=("long_term_cost", "std"),
-        mean_total=("total_cost", "mean"),
-        std_total=("total_cost", "std"),
-        n_windows=("total_cost", "count"),
-    )
-)
-
-
-# ============================================================
-# PLOT
-# ============================================================
-
-fig, axes = plt.subplots(
-    1,
-    3,
-    figsize=(19, 6.5),
-)
-
-plot_info = [
-    ("mean_hitting", "std_hitting", "Hitting Cost"),
-    ("mean_long_term", "std_long_term", "Long-Term Cost"),
-    ("mean_total", "std_total", "Total Cost"),
+ALGORITHM_ORDER = [
+    "OFFLINE-OPT",
+    "GREEDY",
+    "S-MROO-SUM",
+    "S-MROO-MAX",
+    "DMD",
+    "MROO",
 ]
 
 
-for ax, (mean_col, std_col, title) in zip(axes, plot_info):
+ALGORITHM_LABELS = {
+    "OFFLINE-OPT": "OPT",
+    "GREEDY": "GRD",
+    "S-MROO-SUM": "S-MROO-SUM",
+    "S-MROO-MAX": "S-MROO-MAX",
+    "DMD": "DMD",
+    "MROO": "MROO",
+}
 
-    plotted_y = []
+
+# ============================================================
+# 5. COSTS
+# ============================================================
+
+COSTS = [
+    (
+        "hitting_cost",
+        "Hitting Cost",
+    ),
+    (
+        "long_term_cost",
+        "Long-Term Cost",
+    ),
+    (
+        "total_cost",
+        "Total Cost",
+    ),
+]
+
+
+# ============================================================
+# 6. HELPER: PARSE FOLDER NAME
+#
+# Example:
+#
+# beta_50_m_100_T_1440
+# beta_7p5_m_100_T_1440
+# ============================================================
+
+def parse_number(
+    value,
+):
+
+    return float(
+        value.replace(
+            "p",
+            ".",
+        )
+    )
+
+
+def parse_setting_folder(
+    folder_name,
+):
+
+    parts = folder_name.split(
+        "_"
+    )
+
+    try:
+
+        beta_index = parts.index(
+            "beta"
+        )
+
+        m_index = parts.index(
+            "m"
+        )
+
+        T_index = parts.index(
+            "T"
+        )
+
+
+        beta = parse_number(
+            parts[
+                beta_index + 1
+            ]
+        )
+
+
+        m = parse_number(
+            parts[
+                m_index + 1
+            ]
+        )
+
+
+        T = int(
+            parts[
+                T_index + 1
+            ]
+        )
+
+
+        return (
+            beta,
+            m,
+            T,
+        )
+
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# 7. FIND ALL m = TARGET_M SETTINGS
+# ============================================================
+
+setting_folders = []
+
+
+for folder in BASE_RESULT_DIR.iterdir():
+
+
+    # --------------------------------------------------------
+    # Skip explicitly excluded folders
+    # --------------------------------------------------------
+
+    if folder.name in EXCLUDED_FOLDERS:
+
+        print(
+            "Excluding:",
+            folder.name,
+        )
+
+        continue
+
+
+    # --------------------------------------------------------
+    # Must be a directory
+    # --------------------------------------------------------
+
+    if not folder.is_dir():
+
+        continue
+
+
+    # --------------------------------------------------------
+    # Parse folder
+    # --------------------------------------------------------
+
+    parsed = parse_setting_folder(
+        folder.name
+    )
+
+
+    if parsed is None:
+
+        continue
+
+
+    beta, m, T = parsed
+
+
+    # --------------------------------------------------------
+    # Only use desired m
+    # --------------------------------------------------------
+
+    if not np.isclose(
+        m,
+        TARGET_M,
+    ):
+
+        continue
+
+
+    # --------------------------------------------------------
+    # Only use desired window size
+    # --------------------------------------------------------
+
+    if T != WINDOW_SIZE:
+
+        continue
+
+
+    # --------------------------------------------------------
+    # Check combined results
+    # --------------------------------------------------------
+
+    result_file = (
+        folder
+        / "combined_algorithm_window_results.csv"
+    )
+
+
+    if not result_file.exists():
+
+        print(
+            "Skipping because combined result "
+            "file does not exist:"
+        )
+
+        print(
+            folder
+        )
+
+        continue
+
+
+    setting_folders.append(
+        (
+            beta,
+            m,
+            T,
+            folder,
+        )
+    )
+
+
+# ============================================================
+# 8. SORT BY beta/m
+# ============================================================
+
+setting_folders = sorted(
+    setting_folders,
+    key=lambda item:
+        item[0] / item[1],
+)
+
+
+# ============================================================
+# 9. PRINT SETTINGS
+# ============================================================
+
+print(
+    "\n========================================"
+)
+
+print(
+    f"SETTINGS FOUND FOR m = {TARGET_M:g}"
+)
+
+print(
+    "========================================"
+)
+
+
+for (
+    beta,
+    m,
+    T,
+    folder,
+) in setting_folders:
+
+
+    print(
+        f"beta={beta:g}, "
+        f"m={m:g}, "
+        f"beta/m={beta / m:g}, "
+        f"T={T}"
+    )
+
+
+if len(
+    setting_folders
+) == 0:
+
+    raise RuntimeError(
+        f"No result folders found for "
+        f"m={TARGET_M:g} and "
+        f"T={WINDOW_SIZE}."
+    )
+
+
+# ============================================================
+# 10. LOAD ALL RESULTS
+# ============================================================
+
+all_results = []
+
+
+for (
+    beta,
+    m,
+    T,
+    folder,
+) in setting_folders:
+
+
+    result_file = (
+        folder
+        / "combined_algorithm_window_results.csv"
+    )
+
+
+    print(
+        "\nReading:"
+    )
+
+    print(
+        result_file
+    )
+
+
+    df = pd.read_csv(
+        result_file
+    )
+
+
+    # --------------------------------------------------------
+    # Use beta/m metadata from folder
+    # --------------------------------------------------------
+
+    df[
+        "beta"
+    ] = beta
+
+
+    df[
+        "m"
+    ] = m
+
+
+    df[
+        "beta_over_m"
+    ] = (
+        beta / m
+    )
+
+
+    df[
+        "source_folder"
+    ] = folder.name
+
+
+    all_results.append(
+        df
+    )
+
+
+combined_df = pd.concat(
+    all_results,
+    ignore_index=True,
+    sort=False,
+)
+
+
+# ============================================================
+# 11. VERIFY NUMBER OF WINDOWS
+# ============================================================
+
+print(
+    "\n========================================"
+)
+
+print(
+    "ROW COUNTS"
+)
+
+print(
+    "========================================"
+)
+
+
+counts = (
+
+    combined_df
+
+    .groupby(
+        [
+            "beta_over_m",
+            "algorithm",
+        ]
+    )
+
+    .size()
+
+    .reset_index(
+        name="n_windows"
+    )
+
+)
+
+
+print(
+    counts.to_string(
+        index=False
+    )
+)
+
+
+bad_counts = counts[
+    counts[
+        "n_windows"
+    ]
+    != N_WINDOWS
+]
+
+
+if len(
+    bad_counts
+) > 0:
+
+    print(
+        "\nWARNING: Some configurations "
+        f"do not have exactly {N_WINDOWS} windows:"
+    )
+
+    print(
+        bad_counts.to_string(
+            index=False
+        )
+    )
+
+
+# ============================================================
+# 12. BUILD MEAN / STD SUMMARY
+# ============================================================
+
+summary = (
+
+    combined_df
+
+    .groupby(
+        [
+            "algorithm",
+            "beta",
+            "m",
+            "beta_over_m",
+        ],
+        as_index=False,
+    )
+
+    .agg(
+
+        n_windows=(
+            "window_id",
+            "count",
+        ),
+
+        mean_hitting=(
+            "hitting_cost",
+            "mean",
+        ),
+
+        std_hitting=(
+            "hitting_cost",
+            "std",
+        ),
+
+        mean_long_term=(
+            "long_term_cost",
+            "mean",
+        ),
+
+        std_long_term=(
+            "long_term_cost",
+            "std",
+        ),
+
+        mean_total=(
+            "total_cost",
+            "mean",
+        ),
+
+        std_total=(
+            "total_cost",
+            "std",
+        ),
+
+    )
+
+)
+
+
+summary = (
+
+    summary
+
+    .sort_values(
+        [
+            "algorithm",
+            "beta_over_m",
+        ]
+    )
+
+    .reset_index(
+        drop=True
+    )
+
+)
+
+
+# ============================================================
+# 13. PRINT SUMMARY
+# ============================================================
+
+print(
+    "\n========================================"
+)
+
+print(
+    "SUMMARY"
+)
+
+print(
+    "========================================"
+)
+
+
+print(
+    summary.to_string(
+        index=False
+    )
+)
+
+
+# ============================================================
+# 14. MAP COST COLUMNS
+# ============================================================
+
+SUMMARY_COLUMNS = {
+
+    "hitting_cost":
+        (
+            "mean_hitting",
+            "std_hitting",
+        ),
+
+    "long_term_cost":
+        (
+            "mean_long_term",
+            "std_long_term",
+        ),
+
+    "total_cost":
+        (
+            "mean_total",
+            "std_total",
+        ),
+
+}
+
+
+# ============================================================
+# 15. CREATE 2 x 3 FIGURE
+#
+# Row 1:
+#     linear y-axis
+#
+# Row 2:
+#     logarithmic y-axis
+# ============================================================
+
+fig, axes = plt.subplots(
+    2,
+    3,
+    figsize=(
+        16,
+        9,
+    ),
+)
+
+
+# ============================================================
+# 16. HELPER TO DRAW ONE PANEL
+# ============================================================
+
+def draw_panel(
+    ax,
+    cost_name,
+    ylabel,
+    log_scale=False,
+):
+
+
+    mean_column, std_column = (
+        SUMMARY_COLUMNS[
+            cost_name
+        ]
+    )
+
 
     for algorithm in ALGORITHM_ORDER:
 
-        alg_df = (
+
+        algorithm_df = (
+
             summary[
-                summary["algorithm"] == algorithm
+                summary[
+                    "algorithm"
+                ]
+                == algorithm
             ]
-            .sort_values("setting_id")
+
+            .sort_values(
+                "beta_over_m"
+            )
+
         )
 
-        if len(alg_df) == 0:
+
+        if len(
+            algorithm_df
+        ) == 0:
+
             continue
 
-        x = alg_df["setting_id"].to_numpy(dtype=int)
-        y = alg_df[mean_col].to_numpy(dtype=float)
-        s = alg_df[std_col].fillna(0.0).to_numpy(dtype=float)
 
-        plotted_y.extend((y - s).tolist())
-        plotted_y.extend((y + s).tolist())
+        x = (
+            algorithm_df[
+                "beta_over_m"
+            ]
+            .to_numpy(
+                dtype=float
+            )
+        )
 
-        line, = ax.plot(
+
+        y = (
+            algorithm_df[
+                mean_column
+            ]
+            .to_numpy(
+                dtype=float
+            )
+        )
+
+
+        std = (
+            algorithm_df[
+                std_column
+            ]
+            .to_numpy(
+                dtype=float
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # Mean line
+        # ----------------------------------------------------
+
+        line = ax.plot(
             x,
             y,
             marker="o",
-            markersize=7,
-            markeredgewidth=1.3,
-            linewidth=2.8,
-            label=ALGORITHM_LABELS[algorithm],
-            zorder=3,
+            linewidth=2,
+            markersize=5,
+            label=ALGORITHM_LABELS[
+                algorithm
+            ],
+        )[0]
+
+
+        # ----------------------------------------------------
+        # Shadow region
+        #
+        # On a log axis, lower values must be positive.
+        # ----------------------------------------------------
+
+        if log_scale:
+
+            lower = np.maximum(
+                y - std,
+                1e-8,
+            )
+
+        else:
+
+            lower = (
+                y - std
+            )
+
+
+        upper = (
+            y + std
         )
 
-        # lighter shaded band
+
         ax.fill_between(
             x,
-            y - s,
-            y + s,
+            lower,
+            upper,
+            alpha=0.15,
             color=line.get_color(),
-            alpha=0.10,
-            linewidth=0,
-            zorder=1,
         )
 
-        # add thin dashed upper/lower bounds
-        ax.plot(
-            x,
-            y - s,
-            linestyle="--",
-            linewidth=1.0,
-            alpha=0.7,
-            color=line.get_color(),
-            zorder=2,
+
+    # --------------------------------------------------------
+    # Set logarithmic scale
+    # --------------------------------------------------------
+
+    if log_scale:
+
+        ax.set_yscale(
+            "log"
         )
 
-        ax.plot(
-            x,
-            y + s,
-            linestyle="--",
-            linewidth=1.0,
-            alpha=0.7,
-            color=line.get_color(),
-            zorder=2,
-        )
 
-    ax.set_title(
-        title,
-        fontsize=16,
-        fontweight="bold",
-        pad=10,
-    )
-
-    ax.set_ylabel(
-        title,
-        fontsize=12,
-        fontweight="bold",
-    )
+    # --------------------------------------------------------
+    # Axis labels
+    # --------------------------------------------------------
 
     ax.set_xlabel(
-        r"$(\beta,m)$ Setting",
-        fontsize=12,
+        r"$\beta / m$",
+        fontsize=14,
         fontweight="bold",
     )
 
-    ax.set_xticks(
-        np.arange(len(EXPERIMENTS))
-    )
 
-    ax.set_xticklabels(
-        [
-            rf"$\beta={e['beta']:g}$" + "\n" + rf"$m={e['m']:g}$"
-            for e in EXPERIMENTS
-        ],
-        fontsize=10,
+    ax.set_ylabel(
+        ylabel,
+        fontsize=14,
         fontweight="bold",
     )
+
+
+    # --------------------------------------------------------
+    # Grid
+    # --------------------------------------------------------
 
     ax.grid(
-        axis="y",
+        True,
         linestyle="--",
-        linewidth=1.0,
-        alpha=0.35,
+        linewidth=0.7,
+        alpha=0.4,
     )
+
+
+    ax.set_axisbelow(
+        True
+    )
+
+
+    # --------------------------------------------------------
+    # Ticks
+    # --------------------------------------------------------
 
     ax.tick_params(
         axis="both",
-        which="major",
         labelsize=10,
-        width=1.5,
-        length=5,
     )
 
-    for spine in ax.spines.values():
-        spine.set_linewidth(1.6)
+
+    for label in ax.get_xticklabels():
+
+        label.set_fontweight(
+            "bold"
+        )
+
 
     for label in ax.get_yticklabels():
-        label.set_fontweight("bold")
 
-    # tighter y-range, especially useful for hitting cost
-    if len(plotted_y) > 0:
-        y_min = min(plotted_y)
-        y_max = max(plotted_y)
-        pad = 0.08 * (y_max - y_min if y_max > y_min else 1.0)
-        ax.set_ylim(y_min - pad, y_max + pad)
+        label.set_fontweight(
+            "bold"
+        )
 
-    legend = ax.legend(
-        loc="best",
-        fontsize=9,
-        frameon=True,
-        framealpha=0.95,
+
+    # --------------------------------------------------------
+    # Border
+    # --------------------------------------------------------
+
+    for spine in ax.spines.values():
+
+        spine.set_linewidth(
+            1.2
+        )
+
+
+# ============================================================
+# 17. FIRST ROW: CURRENT LINEAR PLOTS
+# ============================================================
+
+for column_index, (
+    cost_name,
+    ylabel,
+) in enumerate(
+    COSTS
+):
+
+
+    draw_panel(
+        axes[
+            0,
+            column_index
+        ],
+        cost_name,
+        ylabel,
+        log_scale=False,
     )
-    legend.get_frame().set_linewidth(1.2)
 
 
-fig.suptitle(
-    "Cost Comparison Across Problem Settings\n"
-    r"$T=17280$ (48-hour windows), Mean $\pm$ Standard Deviation",
-    fontsize=17,
+# ============================================================
+# 18. SECOND ROW: LOG-SCALE PLOTS
+# ============================================================
+
+for column_index, (
+    cost_name,
+    ylabel,
+) in enumerate(
+    COSTS
+):
+
+
+    draw_panel(
+        axes[
+            1,
+            column_index
+        ],
+        cost_name,
+        ylabel,
+        log_scale=True,
+    )
+
+
+# ============================================================
+# 19. ROW LABELS / TITLES
+# ============================================================
+
+axes[
+    0,
+    0
+].text(
+    -0.18,
+    0.5,
+    "Linear Scale",
+    transform=axes[
+        0,
+        0
+    ].transAxes,
+    rotation=90,
+    va="center",
+    ha="center",
+    fontsize=14,
     fontweight="bold",
 )
 
-fig.tight_layout(
-    rect=[0, 0, 1, 0.90]
+
+axes[
+    1,
+    0
+].text(
+    -0.18,
+    0.5,
+    "Log Scale",
+    transform=axes[
+        1,
+        0
+    ].transAxes,
+    rotation=90,
+    va="center",
+    ha="center",
+    fontsize=14,
+    fontweight="bold",
 )
 
-output_file = (
-    PLOT_DIR
-    / "cost_shadow_comparison_T_17280_clearer.png"
+
+# ============================================================
+# 20. COLUMN TITLES
+# ============================================================
+
+axes[
+    0,
+    0
+].set_title(
+    "Hitting Cost",
+    fontsize=14,
+    fontweight="bold",
 )
+
+
+axes[
+    0,
+    1
+].set_title(
+    "Long-Term Cost",
+    fontsize=14,
+    fontweight="bold",
+)
+
+
+axes[
+    0,
+    2
+].set_title(
+    "Total Cost",
+    fontsize=14,
+    fontweight="bold",
+)
+
+
+# ============================================================
+# 21. LEGEND
+# ============================================================
+
+handles, labels = (
+    axes[
+        0,
+        2
+    ]
+    .get_legend_handles_labels()
+)
+
+
+fig.legend(
+    handles,
+    labels,
+    loc="upper center",
+    bbox_to_anchor=(
+        0.5,
+        0.965,
+    ),
+    ncol=len(
+        ALGORITHM_ORDER
+    ),
+    fontsize=10,
+    frameon=False,
+)
+
+
+# ============================================================
+# 22. MAIN TITLE
+# ============================================================
+
+fig.suptitle(
+    (
+        "Cost vs. "
+        r"$\beta/m$"
+        f" for m={TARGET_M:g}"
+    ),
+    fontsize=16,
+    fontweight="bold",
+    y=0.995,
+)
+
+
+# ============================================================
+# 23. SPACING
+# ============================================================
+
+fig.subplots_adjust(
+    left=0.08,
+    right=0.99,
+    bottom=0.08,
+    top=0.89,
+    hspace=0.35,
+    wspace=0.28,
+)
+
+
+# ============================================================
+# 24. SAVE PLOT
+# ============================================================
+
+OUTPUT_FILE = (
+    BASE_RESULT_DIR
+    / (
+        f"shadow_cost_vs_beta_over_m"
+        f"_m_{TARGET_M:g}"
+        f"_T_{WINDOW_SIZE}"
+        f"_linear_and_log.png"
+    )
+)
+
 
 fig.savefig(
-    output_file,
-    dpi=400,
+    OUTPUT_FILE,
+    dpi=300,
     bbox_inches="tight",
 )
 
-print("Saved:", output_file)
+
+# ============================================================
+# 25. SAVE SUMMARY CSV
+# ============================================================
+
+SUMMARY_OUTPUT_FILE = (
+    BASE_RESULT_DIR
+    / (
+        f"shadow_cost_vs_beta_over_m"
+        f"_m_{TARGET_M:g}"
+        f"_T_{WINDOW_SIZE}"
+        f"_linear_and_log_summary.csv"
+    )
+)
+
+
+summary.to_csv(
+    SUMMARY_OUTPUT_FILE,
+    index=False,
+)
+
+
+# ============================================================
+# 26. PRINT OUTPUTS
+# ============================================================
+
+print(
+    "\n========================================"
+)
+
+print(
+    "LINEAR + LOG SHADOW PLOT SAVED"
+)
+
+print(
+    "========================================"
+)
+
+
+print(
+    OUTPUT_FILE
+)
+
+
+print(
+    "\nSummary CSV:"
+)
+
+
+print(
+    SUMMARY_OUTPUT_FILE
+)
+
+
+# ============================================================
+# 27. SHOW
+# ============================================================
 
 plt.show()

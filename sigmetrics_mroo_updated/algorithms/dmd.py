@@ -21,13 +21,14 @@ PROJECT_DIR = (
 )
 
 if str(PROJECT_DIR) not in sys.path:
+
     sys.path.append(
         str(PROJECT_DIR)
     )
 
 
 # ============================================================
-# IMPORTS
+# IMPORT COST FUNCTIONS
 # ============================================================
 
 from cost import (
@@ -36,43 +37,169 @@ from cost import (
     long_term_cost,
 )
 
-from weights import get_w_t
+
+# ============================================================
+# IMPORT CONFIGURATION
+# ============================================================
 
 from config import (
-    RHO,
-    ELL,
+    BETA,
+    A_MATRICES,
 )
+
+
+# ============================================================
+# VALIDATE MEMORY MATRICES
+#
+# There are exactly D memory matrices:
+#
+#     A_1, ..., A_D
+#
+# and each matrix is D x D.
+#
+# Therefore:
+#
+#     A_MATRICES.shape = (D, D, D)
+# ============================================================
+
+A_MATRICES = np.asarray(
+    A_MATRICES,
+    dtype=float,
+)
+
+
+if A_MATRICES.ndim != 3:
+
+    raise ValueError(
+        "A_MATRICES must be a 3-dimensional array. "
+        f"Found shape {A_MATRICES.shape}."
+    )
+
+
+D = int(
+    A_MATRICES.shape[0]
+)
+
+
+if A_MATRICES.shape != (
+    D,
+    D,
+    D,
+):
+
+    raise ValueError(
+        "A_MATRICES must have shape "
+        f"({D}, {D}, {D}), "
+        f"but got {A_MATRICES.shape}."
+    )
 
 
 # ============================================================
 # AUXILIARY SET Z
 #
-# Same definition used by the current MROO implementation.
+# Memory cost:
 #
-# Maximum possible scalar switching magnitude on the simplex:
+# d_{t,i}
 #
-#     Z_MAX
-#       = 1/2 * (
-#           largest ELL
-#           + second-largest ELL
-#         )
+# =
 #
-# Since ELL is scaled by MROO_BETA in config.py,
-# Z_MAX automatically changes with beta.
+# beta / 2
+# *
+# || A_i (u_t - u_{t-1}) ||_2^2
+#
+#
+# Since u_t and u_{t-1} lie on the simplex:
+#
+# ||u_t - u_{t-1}||_2^2 <= 2
+#
+#
+# Therefore:
+#
+# d_{t,i}
+#
+# <=
+#
+# beta * ||A_i||_2^2
+#
+#
+# We use:
+#
+# Z_MAX
+#
+# =
+#
+# beta * max_i ||A_i||_2^2
 # ============================================================
 
-sorted_l = np.sort(
-    ELL
+A_SPECTRAL_NORMS = np.asarray(
+    [
+        np.linalg.norm(
+            A_i,
+            ord=2,
+        )
+
+        for A_i in A_MATRICES
+    ],
+    dtype=float,
 )
 
+
 Z_MAX = (
-    0.5
-    * (
-        sorted_l[-1]
-        +
-        sorted_l[-2]
+
+    BETA
+
+    * np.max(
+        A_SPECTRAL_NORMS ** 2
     )
 )
+
+
+# ============================================================
+# PRINT MEMORY CONFIGURATION
+# ============================================================
+
+print(
+    "\nDMD MEMORY CONFIG:"
+)
+
+print(
+    "  beta =",
+    BETA,
+)
+
+print(
+    "  D =",
+    D,
+)
+
+print(
+    "  number of A matrices =",
+    len(A_MATRICES),
+)
+
+print(
+    "  A spectral norms =",
+    A_SPECTRAL_NORMS,
+)
+
+print(
+    "  Z_MAX =",
+    Z_MAX,
+)
+
+
+for i, A_i in enumerate(
+    A_MATRICES,
+    start=1,
+):
+
+    print(
+        f"\n  A_{i} ="
+    )
+
+    print(
+        A_i
+    )
 
 
 # ============================================================
@@ -82,11 +209,15 @@ Z_MAX = (
 def simplex_constraints():
 
     return [
+
         {
             "type": "eq",
-            "fun": lambda u:
+
+            "fun":
+                lambda u:
                 np.sum(u) - 1.0,
         }
+
     ]
 
 
@@ -96,32 +227,64 @@ def simplex_bounds(
 
     return [
         (0.0, 1.0)
-        for _ in range(dim)
+
+        for _ in range(
+            dim
+        )
     ]
 
 
 # ============================================================
 # AUXILIARY UPDATE
 #
-# z_t = argmin_z [
+# New long-term cost:
 #
-#     q(z) - <kappa_t, z>
+# q(z)
+#
+# =
+#
+# ||z||_infinity
+#
+#
+# Therefore:
+#
+# z_t
+#
+# =
+#
+# argmin_z [
+#
+#     ||z||_infinity
+#
+#     -
+#
+#     <kappa_t, z>
 #
 # ]
 #
-# where
 #
-#     q(z) = rho ||z||_infinity
+# subject to:
+#
+#     0 <= z_i <= Z_MAX
 #
 #
-# Introduce scalar s such that
+# Introduce scalar s:
 #
 #     z_i <= s
 #
-# and solve
+# so that:
 #
-#     min rho*s - kappa^T z
+#     s = ||z||_infinity
 #
+#
+# LP:
+#
+# min
+#
+#     s - kappa_t^T z
+#
+#
+# There is NO rho.
 # ============================================================
 
 def compute_z_t(
@@ -134,9 +297,16 @@ def compute_z_t(
         dtype=float,
     )
 
-    D = len(
-        kappa_t
-    )
+
+    if kappa_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "kappa_t must have shape "
+            f"({D},), "
+            f"but got {kappa_t.shape}."
+        )
 
 
     # --------------------------------------------------------
@@ -153,7 +323,11 @@ def compute_z_t(
     # --------------------------------------------------------
     # Objective:
     #
-    # - kappa^T z + rho*s
+    # -kappa_t^T z + s
+    #
+    # coefficient of s is 1 because:
+    #
+    # q(z) = ||z||_infinity
     # --------------------------------------------------------
 
     c = np.zeros(
@@ -161,13 +335,13 @@ def compute_z_t(
         dtype=float,
     )
 
+
     c[:D] = (
         -kappa_t
     )
 
-    c[D] = (
-        RHO
-    )
+
+    c[D] = 1.0
 
 
     # --------------------------------------------------------
@@ -184,31 +358,48 @@ def compute_z_t(
         dtype=float,
     )
 
+
     b_ub = np.zeros(
         D,
         dtype=float,
     )
 
-    for i in range(D):
 
-        A_ub[i, i] = 1.0
+    for i in range(
+        D
+    ):
 
-        A_ub[i, D] = -1.0
+        A_ub[
+            i,
+            i,
+        ] = 1.0
+
+        A_ub[
+            i,
+            D,
+        ] = -1.0
 
 
     # --------------------------------------------------------
     # Bounds:
     #
     # 0 <= z_i <= Z_MAX
-    # 0 <= s   <= Z_MAX
+    #
+    # 0 <= s <= Z_MAX
     # --------------------------------------------------------
 
     bounds = (
+
         [
             (0.0, z_max)
-            for _ in range(D)
+
+            for _ in range(
+                D
+            )
         ]
+
         +
+
         [
             (0.0, z_max)
         ]
@@ -252,29 +443,46 @@ def compute_z_t(
 # ============================================================
 # ONE DMD PRIMAL STEP
 #
-# u_t = argmin_u [
+# u_t
+#
+# =
+#
+# argmin_u [
 #
 #     f_t(u)
+#
 #     +
+#
 #     <kappa_t, d_t(u, u_prev)>
 #
 # ]
 #
 #
+# where:
+#
+# d_{t,i}
+#
+# =
+#
+# beta / 2
+# *
+# ||A_i(u-u_prev)||_2^2
+#
+#
 # IMPORTANT:
 #
-# There is:
+# DMD has:
 #
-#   NO lambda_1
-#   NO lambda_2
-#   NO v_t regularization
+#     NO lambda_1
 #
+#     NO lambda_2
+#
+#     NO v_t regularization
 # ============================================================
 
 def dmd_step(
     y_t,
     u_prev,
-    w_t,
     kappa_t,
 ):
 
@@ -288,19 +496,47 @@ def dmd_step(
         dtype=float,
     )
 
-    w_t = np.asarray(
-        w_t,
-        dtype=float,
-    )
-
     kappa_t = np.asarray(
         kappa_t,
         dtype=float,
     )
 
 
+    if y_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "y_t must have shape "
+            f"({D},), "
+            f"but got {y_t.shape}."
+        )
+
+
+    if u_prev.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "u_prev must have shape "
+            f"({D},), "
+            f"but got {u_prev.shape}."
+        )
+
+
+    if kappa_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "kappa_t must have shape "
+            f"({D},), "
+            f"but got {kappa_t.shape}."
+        )
+
+
     # --------------------------------------------------------
-    # DMD PRIMAL OBJECTIVE
+    # DMD primal objective
     # --------------------------------------------------------
 
     def objective(
@@ -318,15 +554,24 @@ def dmd_step(
 
 
         # ----------------------------------------------------
-        # Memory-cost vector
+        # Vector-valued memory cost
         #
-        # d_t(u, u_prev)
+        # d_{t,i}
+        #
+        # =
+        #
+        # beta / 2
+        # *
+        # ||A_i(u-u_prev)||_2^2
         # ----------------------------------------------------
 
         d_t = memory_cost(
-            u,
-            u_prev,
-            w_t,
+
+            u_t=u,
+
+            u_prev=u_prev,
+
+            A_matrices=A_MATRICES,
         )
 
 
@@ -337,6 +582,7 @@ def dmd_step(
         # ----------------------------------------------------
 
         dual_memory = (
+
             np.dot(
                 kappa_t,
                 d_t,
@@ -345,7 +591,7 @@ def dmd_step(
 
 
         # ----------------------------------------------------
-        # DMD OBJECTIVE
+        # DMD objective
         # ----------------------------------------------------
 
         return (
@@ -357,8 +603,6 @@ def dmd_step(
 
     # --------------------------------------------------------
     # Solve primal update
-    #
-    # Warm start from previous allocation.
     # --------------------------------------------------------
 
     result = minimize(
@@ -370,7 +614,7 @@ def dmd_step(
         method="SLSQP",
 
         bounds=simplex_bounds(
-            len(y_t)
+            D
         ),
 
         constraints=simplex_constraints(),
@@ -396,13 +640,16 @@ def dmd_step(
 
 
     # --------------------------------------------------------
-    # Realized memory cost
+    # Realized vector-valued memory cost
     # --------------------------------------------------------
 
     d_t = memory_cost(
-        u_t,
-        u_prev,
-        w_t,
+
+        u_t=u_t,
+
+        u_prev=u_prev,
+
+        A_matrices=A_MATRICES,
     )
 
 
@@ -415,16 +662,25 @@ def dmd_step(
 # ============================================================
 # DUAL UPDATE
 #
-# g_t = z_t - d_t
+# g_t
+#
+# =
+#
+# z_t - d_t
+#
 #
 # Euclidean mirror descent:
 #
 # kappa_{t+1}
 #
-#     = [kappa_t - eta*g_t]_+
+# =
 #
-#     = [kappa_t + eta*(d_t-z_t)]_+
+# [kappa_t - eta g_t]_+
 #
+#
+# =
+#
+# [kappa_t + eta(d_t-z_t)]_+
 # ============================================================
 
 def dual_update(
@@ -450,19 +706,55 @@ def dual_update(
     )
 
 
+    if kappa_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "kappa_t must have shape "
+            f"({D},), "
+            f"but got {kappa_t.shape}."
+        )
+
+
+    if d_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "d_t must have shape "
+            f"({D},), "
+            f"but got {d_t.shape}."
+        )
+
+
+    if z_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "z_t must have shape "
+            f"({D},), "
+            f"but got {z_t.shape}."
+        )
+
+
     # --------------------------------------------------------
     # DMD subgradient
     # --------------------------------------------------------
 
     g_t = (
+
         z_t
+
         -
+
         d_t
     )
 
 
     # --------------------------------------------------------
-    # Project onto nonnegative orthant
+    # Projected Euclidean mirror-descent update
     # --------------------------------------------------------
 
     kappa_next = np.maximum(
@@ -470,8 +762,11 @@ def dual_update(
         0.0,
 
         kappa_t
+
         -
+
         eta
+
         * g_t,
     )
 
@@ -500,18 +795,37 @@ def run_dmd(
 
 
     # --------------------------------------------------------
-    # Dimensions
+    # Validate demand
     # --------------------------------------------------------
 
-    T, D = (
+    if demand.ndim != 2:
+
+        raise ValueError(
+            "demand must be a 2-dimensional array. "
+            f"Found shape {demand.shape}."
+        )
+
+
+    (
+        T,
+        demand_D,
+    ) = (
         demand.shape
     )
 
 
+    if demand_D != D:
+
+        raise ValueError(
+            "Demand dimension does not match "
+            "the configured dimension. "
+            f"Demand dimension = {demand_D}, "
+            f"D = {D}."
+        )
+
+
     # ========================================================
     # DEFAULT THEORETICAL STEP SIZE
-    #
-    # Current convention:
     #
     # eta = T^{-1/3}
     # ========================================================
@@ -542,7 +856,11 @@ def run_dmd(
     # ========================================================
 
     u_prev = (
-        np.ones(D)
+
+        np.ones(
+            D
+        )
+
         / D
     )
 
@@ -550,7 +868,7 @@ def run_dmd(
     # ========================================================
     # INITIAL DUAL VARIABLE
     #
-    # Current convention:
+    # Default:
     #
     # kappa_1 = (1/T) * 1
     # ========================================================
@@ -558,7 +876,11 @@ def run_dmd(
     if kappa_init is None:
 
         kappa_t = (
-            np.ones(D)
+
+            np.ones(
+                D
+            )
+
             / T
         )
 
@@ -570,20 +892,45 @@ def run_dmd(
         )
 
 
+        # ----------------------------------------------------
+        # Scalar kappa:
+        #
+        # k -> [k, ..., k]
+        # ----------------------------------------------------
+
         if kappa_t.ndim == 0:
 
             kappa_t = (
-                np.ones(D)
-                * float(kappa_t)
+
+                np.ones(
+                    D
+                )
+
+                * float(
+                    kappa_t
+                )
             )
 
 
-        if kappa_t.shape != (D,):
+        if kappa_t.shape != (
+            D,
+        ):
 
             raise ValueError(
                 f"kappa_init must have shape ({D},), "
                 f"but got {kappa_t.shape}."
             )
+
+
+    if np.any(
+        ~np.isfinite(
+            kappa_t
+        )
+    ):
+
+        raise ValueError(
+            "kappa_init must contain only finite values."
+        )
 
 
     if np.any(
@@ -593,6 +940,15 @@ def run_dmd(
         raise ValueError(
             "kappa_init must be nonnegative."
         )
+
+
+    # --------------------------------------------------------
+    # Save the actual initial kappa used
+    # --------------------------------------------------------
+
+    initial_kappa = (
+        kappa_t.copy()
+    )
 
 
     # ========================================================
@@ -605,8 +961,6 @@ def run_dmd(
 
     memory_history = []
 
-    switching_history = []
-
     kappa_history = []
 
     z_history = []
@@ -618,8 +972,9 @@ def run_dmd(
     # MAIN ONLINE LOOP
     # ========================================================
 
-    for t in range(T):
-
+    for t in range(
+        T
+    ):
 
         # ----------------------------------------------------
         # Current demand
@@ -627,16 +982,6 @@ def run_dmd(
 
         y_t = (
             demand[t]
-        )
-
-
-        # ----------------------------------------------------
-        # Current exposure vector
-        # ----------------------------------------------------
-
-        w_t = get_w_t(
-            t=t,
-            y_t=y_t,
         )
 
 
@@ -652,7 +997,13 @@ def run_dmd(
         # ====================================================
         # 1. PRIMAL UPDATE
         #
-        # min f_t(u) + <kappa_t, d_t(u,u_prev)>
+        # min
+        #
+        # f_t(u)
+        #
+        # +
+        #
+        # <kappa_t, d_t(u,u_prev)>
         # ====================================================
 
         (
@@ -664,8 +1015,6 @@ def run_dmd(
 
             u_prev=u_prev,
 
-            w_t=w_t,
-
             kappa_t=kappa_t,
         )
 
@@ -673,7 +1022,13 @@ def run_dmd(
         # ====================================================
         # 2. AUXILIARY UPDATE
         #
-        # z_t = argmin q(z) - <kappa_t,z>
+        # z_t
+        #
+        # =
+        #
+        # argmin_z
+        #
+        # ||z||_inf - <kappa_t,z>
         # ====================================================
 
         z_t = compute_z_t(
@@ -689,7 +1044,9 @@ def run_dmd(
         #
         # kappa_{t+1}
         #
-        # = [kappa_t + eta(d_t-z_t)]_+
+        # =
+        #
+        # [kappa_t + eta(d_t-z_t)]_+
         # ====================================================
 
         (
@@ -722,22 +1079,11 @@ def run_dmd(
                 u_t,
                 y_t,
             )
-
         )
 
 
         memory_history.append(
             d_t.copy()
-        )
-
-
-        switching_history.append(
-
-            np.linalg.norm(
-                d_t,
-                ord=2,
-            )
-
         )
 
 
@@ -756,11 +1102,12 @@ def run_dmd(
         # ====================================================
 
         u_prev = (
-            u_t
+            u_t.copy()
         )
 
+
         kappa_t = (
-            kappa_next
+            kappa_next.copy()
         )
 
 
@@ -772,25 +1119,26 @@ def run_dmd(
         actions
     )
 
+
     hitting_history = np.asarray(
         hitting_history
     )
+
 
     memory_history = np.asarray(
         memory_history
     )
 
-    switching_history = np.asarray(
-        switching_history
-    )
 
     kappa_history = np.asarray(
         kappa_history
     )
 
+
     z_history = np.asarray(
         z_history
     )
+
 
     gradient_history = np.asarray(
         gradient_history
@@ -806,25 +1154,40 @@ def run_dmd(
         np.sum(
             hitting_history
         )
-
     )
 
+
+    # --------------------------------------------------------
+    # Long-term cost:
+    #
+    # || sum_t d_t ||_inf
+    #
+    # =
+    #
+    # max_i
+    #
+    # sum_t
+    #
+    # beta / 2
+    #
+    # ||A_i(u_t-u_{t-1})||_2^2
+    # --------------------------------------------------------
 
     final_long_term_cost = float(
 
         long_term_cost(
             memory_history
         )
-
     )
 
 
     total_cost = (
 
         hitting_cost_total
-        +
-        final_long_term_cost
 
+        +
+
+        final_long_term_cost
     )
 
 
@@ -833,7 +1196,6 @@ def run_dmd(
     # ========================================================
 
     return {
-
 
         # ----------------------------------------------------
         # Trajectories
@@ -849,10 +1211,6 @@ def run_dmd(
 
         "memory_history":
             memory_history,
-
-
-        "switching_history":
-            switching_history,
 
 
         "kappa_history":
@@ -892,17 +1250,12 @@ def run_dmd(
 
 
         "kappa_init":
-            (
-                np.ones(D) / T
-                if kappa_init is None
-                else np.asarray(
-                    kappa_init,
-                    dtype=float,
-                )
-            ),
+            initial_kappa,
 
 
         "z_max":
-            float(z_max),
+            float(
+                z_max
+            ),
 
     }

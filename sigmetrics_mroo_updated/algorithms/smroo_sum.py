@@ -34,14 +34,60 @@ from cost import (
     long_term_cost,
 )
 
-from weights import get_w_t
-
 from config import (
     M,
     BETA,
     H,
-    RHO,
+    A_MATRICES,
 )
+
+
+# ============================================================
+# VALIDATE MEMORY MATRICES
+#
+# There are exactly D matrices:
+#
+#     A_1, ..., A_D
+#
+# and each:
+#
+#     A_i in R^{D x D}
+#
+# Therefore:
+#
+#     A_MATRICES.shape = (D, D, D)
+# ============================================================
+
+A_MATRICES = np.asarray(
+    A_MATRICES,
+    dtype=float,
+)
+
+
+if A_MATRICES.ndim != 3:
+
+    raise ValueError(
+        "A_MATRICES must be a 3-dimensional array. "
+        f"Found shape {A_MATRICES.shape}."
+    )
+
+
+D_CONFIG = int(
+    A_MATRICES.shape[0]
+)
+
+
+if A_MATRICES.shape != (
+    D_CONFIG,
+    D_CONFIG,
+    D_CONFIG,
+):
+
+    raise ValueError(
+        "A_MATRICES must have shape "
+        f"({D_CONFIG}, {D_CONFIG}, {D_CONFIG}), "
+        f"but got {A_MATRICES.shape}."
+    )
 
 
 # ============================================================
@@ -51,6 +97,7 @@ from config import (
 def simplex_constraints():
 
     return [
+
         {
             "type":
                 "eq",
@@ -59,6 +106,7 @@ def simplex_constraints():
                 lambda u:
                 np.sum(u) - 1.0,
         }
+
     ]
 
 
@@ -74,7 +122,11 @@ def simplex_bounds(
 # ============================================================
 # HITTING-COST MINIMIZER
 #
-# v_t = argmin f_t(u)
+# v_t
+#
+# =
+#
+# argmin_u f_t(u)
 # ============================================================
 
 def compute_v_t(
@@ -125,6 +177,57 @@ def compute_v_t(
 
 # ============================================================
 # THEORETICAL S-MROO-SUM PARAMETERS
+#
+# For the SUM surrogate:
+#
+#     q(z) = ||z||_1
+#
+# There is NO rho.
+#
+# Its Lipschitz constant with respect to ||.||_2 is:
+#
+#     L_q = sqrt(D)
+#
+#
+# For SUM / r = 1:
+#
+#     gamma = 1
+#
+#
+# Pair 1:
+#
+# lambda_1
+#
+# =
+#
+# m /
+# (
+#     m * gamma
+#     +
+#     beta * L_q * H^2
+# )
+#
+# lambda_2 = 0
+#
+#
+# Pair 2:
+#
+# lambda_1 = 1
+#
+# lambda_2
+#
+# =
+#
+# m(gamma - 1)
+# +
+# beta * L_q * H^2
+#
+#
+# NOTE:
+# We retain the existing theoretical use of BETA here.
+# If the theorem's beta is intended to represent the smoothness
+# constant of the matrix-valued memory function, this may later
+# need to incorporate max_i ||A_i||_2^2.
 # ============================================================
 
 def get_smroo_sum_parameters(
@@ -135,21 +238,20 @@ def get_smroo_sum_parameters(
     # --------------------------------------------------------
     # SUM norm:
     #
-    # q(z) = rho ||z||_1
+    # q(z) = ||z||_1
     #
     # Lipschitz constant with respect to l2:
     #
-    # L_q = rho sqrt(D)
+    # L_q = sqrt(D)
     # --------------------------------------------------------
 
-    L_q = (
-        RHO
-        * np.sqrt(D)
+    L_q = np.sqrt(
+        D
     )
 
 
     # --------------------------------------------------------
-    # For SUM / r = 1:
+    # SUM / r = 1:
     #
     # gamma = 1
     # --------------------------------------------------------
@@ -162,8 +264,11 @@ def get_smroo_sum_parameters(
     # --------------------------------------------------------
 
     memory_constant = (
+
         BETA
+
         * L_q
+
         * H**2
     )
 
@@ -171,12 +276,15 @@ def get_smroo_sum_parameters(
     # --------------------------------------------------------
     # Pair 1
     #
-    # lambda_1 =
+    # lambda_1
     #
-    # m /
+    # =
+    #
+    # M /
     # (
-    #   m gamma
-    #   + beta L_q H^2
+    #     M * gamma
+    #     +
+    #     memory_constant
     # )
     #
     # lambda_2 = 0
@@ -185,8 +293,11 @@ def get_smroo_sum_parameters(
     if parameter_pair == 1:
 
         lambda_1 = (
+
             M
+
             /
+
             (
                 M
                 * gamma_R_q
@@ -197,19 +308,33 @@ def get_smroo_sum_parameters(
             )
         )
 
+
         lambda_2 = 0.0
 
 
     # --------------------------------------------------------
     # Pair 2
+    #
+    # lambda_1 = 1
+    #
+    # lambda_2
+    #
+    # =
+    #
+    # M(gamma - 1)
+    # +
+    # memory_constant
     # --------------------------------------------------------
 
     elif parameter_pair == 2:
 
         lambda_1 = 1.0
 
+
         lambda_2 = (
+
             M
+
             * (
                 gamma_R_q
                 - 1.0
@@ -229,9 +354,13 @@ def get_smroo_sum_parameters(
 
 
     return (
+
         lambda_1,
+
         lambda_2,
+
         gamma_R_q,
+
         L_q,
     )
 
@@ -239,23 +368,51 @@ def get_smroo_sum_parameters(
 # ============================================================
 # ONE S-MROO-SUM STEP
 #
-# u_t = argmin [
+# u_t
+#
+# =
+#
+# argmin_u [
 #
 #     f_t(u)
 #
-#     + lambda_1 q(d_t)
+#     +
 #
-#     + lambda_2/2 ||u-v_t||^2
+#     lambda_1 q(d_t)
+#
+#     +
+#
+#     lambda_2 / 2
+#     ||u-v_t||_2^2
 #
 # ]
 #
-# q(d_t) = rho ||d_t||_1
+#
+# where:
+#
+# q(d_t)
+#
+# =
+#
+# ||d_t||_1
+#
+#
+# and:
+#
+# d_{t,i}
+#
+# =
+#
+# beta / 2
+#
+# *
+#
+# ||A_i(u-u_prev)||_2^2
 # ============================================================
 
 def smroo_sum_step(
     y_t,
     u_prev,
-    w_t,
     lambda_1,
     lambda_2,
 ):
@@ -265,15 +422,37 @@ def smroo_sum_step(
         dtype=float,
     )
 
+
     u_prev = np.asarray(
         u_prev,
         dtype=float,
     )
 
-    w_t = np.asarray(
-        w_t,
-        dtype=float,
+
+    D = len(
+        y_t
     )
+
+
+    if D != D_CONFIG:
+
+        raise ValueError(
+            "y_t dimension does not match "
+            "the configured A matrices. "
+            f"y_t dimension = {D}, "
+            f"configured D = {D_CONFIG}."
+        )
+
+
+    if u_prev.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "u_prev must have shape "
+            f"({D},), "
+            f"but got {u_prev.shape}."
+        )
 
 
     # --------------------------------------------------------
@@ -293,50 +472,87 @@ def smroo_sum_step(
         u,
     ):
 
+        # ----------------------------------------------------
+        # Hitting cost
+        # ----------------------------------------------------
+
         f = hitting_cost(
             u,
             y_t,
         )
 
 
+        # ----------------------------------------------------
+        # Vector-valued memory cost
+        #
+        # d_{t,i}
+        #
+        # =
+        #
+        # beta / 2
+        #
+        # *
+        #
+        # ||A_i(u-u_prev)||_2^2
+        # ----------------------------------------------------
+
         d_t = memory_cost(
-            u,
-            u_prev,
-            w_t,
+
+            u_t=u,
+
+            u_prev=u_prev,
+
+            A_matrices=A_MATRICES,
         )
 
 
         # ----------------------------------------------------
-        # SUM surrogate:
+        # SUM surrogate
         #
-        # q(d_t) = rho ||d_t||_1
+        # q(d_t)
+        #
+        # =
+        #
+        # ||d_t||_1
+        #
+        # Since d_t >= 0:
+        #
+        # =
+        #
+        # sum_i d_{t,i}
+        #
+        # There is NO rho.
         # ----------------------------------------------------
 
-        q_d = (
-            RHO
-            * np.sum(
-                np.abs(
-                    d_t
-                )
-            )
+        q_d = np.sum(
+            d_t
         )
 
 
         static_memory = (
+
             lambda_1
+
             * q_d
         )
 
 
         # ----------------------------------------------------
-        # Algorithm 1 regularization
+        # Algorithm regularization
         #
-        # lambda_2 / 2 ||u-v_t||^2
+        # lambda_2 / 2
+        #
+        # *
+        #
+        # ||u-v_t||_2^2
         # ----------------------------------------------------
 
         regularization = (
+
             lambda_2
+
             / 2.0
+
             * np.sum(
                 (
                     u
@@ -347,16 +563,21 @@ def smroo_sum_step(
 
 
         return (
+
             f
+
             +
+
             static_memory
+
             +
+
             regularization
         )
 
 
     # --------------------------------------------------------
-    # Solve
+    # Solve primal update
     # --------------------------------------------------------
 
     result = minimize(
@@ -368,7 +589,7 @@ def smroo_sum_step(
         method="SLSQP",
 
         bounds=simplex_bounds(
-            len(y_t)
+            D
         ),
 
         constraints=simplex_constraints(),
@@ -394,19 +615,25 @@ def smroo_sum_step(
 
 
     # --------------------------------------------------------
-    # Realized memory cost
+    # Realized vector-valued memory cost
     # --------------------------------------------------------
 
     d_t = memory_cost(
-        u_t,
-        u_prev,
-        w_t,
+
+        u_t=u_t,
+
+        u_prev=u_prev,
+
+        A_matrices=A_MATRICES,
     )
 
 
     return (
+
         u_t,
+
         v_t,
+
         d_t,
     )
 
@@ -416,9 +643,11 @@ def smroo_sum_step(
 #
 # If lambda_1 / lambda_2 are None:
 #
-# use theoretical parameters.
+#     use theoretical parameters.
 #
-# Otherwise use the supplied values.
+# Otherwise:
+#
+#     use supplied values.
 # ============================================================
 
 def run_smroo_sum(
@@ -434,9 +663,34 @@ def run_smroo_sum(
     )
 
 
-    T, D = (
+    # --------------------------------------------------------
+    # Validate demand
+    # --------------------------------------------------------
+
+    if demand.ndim != 2:
+
+        raise ValueError(
+            "demand must be a 2-dimensional array. "
+            f"Found shape {demand.shape}."
+        )
+
+
+    (
+        T,
+        D,
+    ) = (
         demand.shape
     )
+
+
+    if D != D_CONFIG:
+
+        raise ValueError(
+            "Demand dimension does not match "
+            "the configured A matrices. "
+            f"Demand dimension = {D}, "
+            f"configured dimension = {D_CONFIG}."
+        )
 
 
     # --------------------------------------------------------
@@ -445,11 +699,17 @@ def run_smroo_sum(
 
     (
         theoretical_lambda_1,
+
         theoretical_lambda_2,
+
         gamma_R_q,
+
         L_q,
+
     ) = get_smroo_sum_parameters(
+
         D=D,
+
         parameter_pair=parameter_pair,
     )
 
@@ -476,6 +736,7 @@ def run_smroo_sum(
         lambda_1
     )
 
+
     lambda_2 = float(
         lambda_2
     )
@@ -497,17 +758,23 @@ def run_smroo_sum(
 
     # --------------------------------------------------------
     # Initial allocation
+    #
+    # u_0 = uniform allocation
     # --------------------------------------------------------
 
     u_prev = (
-        np.ones(D)
+
+        np.ones(
+            D
+        )
+
         / D
     )
 
 
-    # --------------------------------------------------------
-    # Histories
-    # --------------------------------------------------------
+    # ========================================================
+    # HISTORIES
+    # ========================================================
 
     actions = []
 
@@ -515,27 +782,17 @@ def run_smroo_sum(
 
     memory_history = []
 
-    switching_history = []
-
 
     # ========================================================
     # MAIN ONLINE LOOP
     # ========================================================
 
-    for t in range(T):
+    for t in range(
+        T
+    ):
 
         y_t = (
             demand[t]
-        )
-
-
-        # ----------------------------------------------------
-        # Exposure vector
-        # ----------------------------------------------------
-
-        w_t = get_w_t(
-            t=t,
-            y_t=y_t,
         )
 
 
@@ -545,15 +802,16 @@ def run_smroo_sum(
 
         (
             u_t,
+
             v_t,
+
             d_t,
+
         ) = smroo_sum_step(
 
             y_t=y_t,
 
             u_prev=u_prev,
-
-            w_t=w_t,
 
             lambda_1=lambda_1,
 
@@ -562,7 +820,7 @@ def run_smroo_sum(
 
 
         # ----------------------------------------------------
-        # Save
+        # Save action
         # ----------------------------------------------------
 
         actions.append(
@@ -570,28 +828,25 @@ def run_smroo_sum(
         )
 
 
+        # ----------------------------------------------------
+        # Save hitting cost
+        # ----------------------------------------------------
+
         hitting_history.append(
 
             hitting_cost(
                 u_t,
                 y_t,
             )
-
         )
 
+
+        # ----------------------------------------------------
+        # Save vector memory cost
+        # ----------------------------------------------------
 
         memory_history.append(
             d_t.copy()
-        )
-
-
-        switching_history.append(
-
-            np.linalg.norm(
-                d_t,
-                ord=2,
-            )
-
         )
 
 
@@ -600,7 +855,7 @@ def run_smroo_sum(
         # ----------------------------------------------------
 
         u_prev = (
-            u_t
+            u_t.copy()
         )
 
 
@@ -612,16 +867,14 @@ def run_smroo_sum(
         actions
     )
 
+
     hitting_history = np.asarray(
         hitting_history
     )
 
+
     memory_history = np.asarray(
         memory_history
-    )
-
-    switching_history = np.asarray(
-        switching_history
     )
 
 
@@ -629,14 +882,24 @@ def run_smroo_sum(
     # FINAL CUMULATIVE COST
     # ========================================================
 
-    hitting_cost_total = (
+    hitting_cost_total = float(
+
         np.sum(
             hitting_history
         )
     )
 
 
-    final_long_term_cost = (
+    # --------------------------------------------------------
+    # Actual objective uses:
+    #
+    # || sum_t d_t ||_infinity
+    #
+    # NOT the SUM surrogate used by S-MROO-SUM internally.
+    # --------------------------------------------------------
+
+    final_long_term_cost = float(
+
         long_term_cost(
             memory_history
         )
@@ -644,9 +907,24 @@ def run_smroo_sum(
 
 
     total_cost = (
+
         hitting_cost_total
+
         +
+
         final_long_term_cost
+    )
+
+
+    # ========================================================
+    # CUMULATIVE MEMORY VECTOR
+    # ========================================================
+
+    cumulative_memory = np.sum(
+
+        memory_history,
+
+        axis=0,
     )
 
 
@@ -656,45 +934,71 @@ def run_smroo_sum(
 
     return {
 
+        # ----------------------------------------------------
+        # Trajectories
+        # ----------------------------------------------------
+
         "actions":
             actions,
+
 
         "hitting_history":
             hitting_history,
 
+
         "memory_history":
             memory_history,
 
-        "switching_history":
-            switching_history,
+
+        "cumulative_memory":
+            cumulative_memory,
+
+
+        # ----------------------------------------------------
+        # Final actual objective costs
+        # ----------------------------------------------------
 
         "hitting_cost":
             hitting_cost_total,
 
+
         "long_term_cost":
             final_long_term_cost,
+
 
         "total_cost":
             total_cost,
 
+
+        # ----------------------------------------------------
+        # Algorithm parameters
+        # ----------------------------------------------------
+
         "lambda_1":
             lambda_1,
+
 
         "lambda_2":
             lambda_2,
 
+
         "theoretical_lambda_1":
             theoretical_lambda_1,
+
 
         "theoretical_lambda_2":
             theoretical_lambda_2,
 
+
         "gamma_R_q":
             gamma_R_q,
+
 
         "L_q":
             L_q,
 
+
         "parameter_pair":
             parameter_pair,
+
     }

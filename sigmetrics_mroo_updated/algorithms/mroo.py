@@ -23,7 +23,7 @@ PROJECT_DIR = (
 
 print(
     "project dir:",
-    PROJECT_DIR
+    PROJECT_DIR,
 )
 
 if str(PROJECT_DIR) not in sys.path:
@@ -45,54 +45,196 @@ from cost import (
 
 
 # ============================================================
-# IMPORT WEIGHTS
-# ============================================================
-
-from weights import get_w_t
-
-
-# ============================================================
 # IMPORT CONFIGURATION
 #
-# Important:
+# BETA
+#     memory-cost scaling
 #
-# LAMBDA_1_THEORY is only the DEFAULT lambda_1.
+# A_MATRICES
+#     A_1, ..., A_D
 #
-# Individual runs may provide another scalar lambda_1,
-# such as 0.1 or 0.01.
+# M
+#     strong-convexity / theory parameter
+#
+# LAMBDA_1_THEORY
+#     default lambda_1
+#
+# LAMBDA_2
+#     regularization parameter
 # ============================================================
 
 from config import (
-    ELL,
+    BETA,
+    A_MATRICES,
     M,
-    RHO,
     LAMBDA_1_THEORY,
     LAMBDA_2,
 )
 
 
 # ============================================================
-# AUXILIARY SET Z
+# VALIDATE MEMORY MATRICES
+#
+# We require exactly D matrices:
+#
+#     A_1, ..., A_D
+#
+# and each:
+#
+#     A_i in R^{D x D}
+#
+# Therefore:
+#
+#     A_MATRICES.shape = (D, D, D)
 # ============================================================
 
-# Maximum possible scalar switching magnitude
-# on the simplex.
-#
-# Maximum occurs when moving between two
-# simplex vertices.
-
-sorted_l = np.sort(
-    ELL
+A_MATRICES = np.asarray(
+    A_MATRICES,
+    dtype=float,
 )
+
+if A_MATRICES.ndim != 3:
+
+    raise ValueError(
+        "A_MATRICES must be a 3-dimensional array. "
+        f"Found shape {A_MATRICES.shape}."
+    )
+
+
+D = (
+    A_MATRICES.shape[0]
+)
+
+
+if A_MATRICES.shape != (
+    D,
+    D,
+    D,
+):
+
+    raise ValueError(
+        "A_MATRICES must have shape "
+        f"({D}, {D}, {D}), "
+        f"but got {A_MATRICES.shape}."
+    )
+
+
+# ============================================================
+# AUXILIARY SET Z
+#
+# Memory cost:
+#
+# d_{t,i}
+#
+# =
+#
+# beta / 2
+# *
+# || A_i (u_t - u_{t-1}) ||_2^2
+#
+#
+# Since both u_t and u_{t-1} lie on the simplex:
+#
+# ||u_t - u_{t-1}||_2^2 <= 2
+#
+#
+# Therefore:
+#
+# d_{t,i}
+#
+# <=
+#
+# beta / 2
+# *
+# ||A_i||_2^2
+# *
+# 2
+#
+# =
+#
+# beta * ||A_i||_2^2
+#
+#
+# A common safe upper bound is:
+#
+# Z_MAX
+#
+# =
+#
+# beta * max_i ||A_i||_2^2
+# ============================================================
+
+A_SPECTRAL_NORMS = np.asarray(
+    [
+        np.linalg.norm(
+            A_i,
+            ord=2,
+        )
+
+        for A_i in A_MATRICES
+    ],
+    dtype=float,
+)
+
 
 Z_MAX = (
-    0.5
-    * (
-        sorted_l[-1]
-        +
-        sorted_l[-2]
+
+    BETA
+
+    * np.max(
+        A_SPECTRAL_NORMS ** 2
     )
 )
+
+
+# ============================================================
+# PRINT MEMORY CONFIGURATION
+# ============================================================
+
+print(
+    "\nMROO MEMORY CONFIG:"
+)
+
+print(
+    "  beta =",
+    BETA,
+)
+
+print(
+    "  D =",
+    D,
+)
+
+print(
+    "  number of A matrices =",
+    len(
+        A_MATRICES
+    ),
+)
+
+print(
+    "  A spectral norms =",
+    A_SPECTRAL_NORMS,
+)
+
+print(
+    "  Z_MAX =",
+    Z_MAX,
+)
+
+
+for i, A_i in enumerate(
+    A_MATRICES,
+    start=1,
+):
+
+    print(
+        f"\n  A_{i} ="
+    )
+
+    print(
+        A_i
+    )
 
 
 # ============================================================
@@ -114,7 +256,9 @@ def simplex_constraints():
     ]
 
 
-def simplex_bounds(dim):
+def simplex_bounds(
+    dim,
+):
 
     return [
         (0.0, 1.0)
@@ -124,7 +268,16 @@ def simplex_bounds(dim):
 # ============================================================
 # HITTING-COST MINIMIZER
 #
-# v_t = argmin_u f_t(u)
+# v_t
+#
+# =
+#
+# argmin_u f_t(u)
+#
+# subject to:
+#
+# u >= 0
+# sum_i u_i = 1
 # ============================================================
 
 def compute_v_t(
@@ -135,7 +288,6 @@ def compute_v_t(
         y_t,
         dtype=float,
     )
-
 
     result = minimize(
 
@@ -161,7 +313,6 @@ def compute_v_t(
         },
     )
 
-
     if not result.success:
 
         raise RuntimeError(
@@ -169,30 +320,48 @@ def compute_v_t(
             f"{result.message}"
         )
 
-
     return result.x
 
 
 # ============================================================
 # PRIMAL UPDATE
 #
-# u_t = argmin [
+# u_t
+#
+# =
+#
+# argmin_u [
 #
 #     f_t(u)
 #
-#     + lambda_1
-#       <kappa_t, d_t(u, u_prev)>
+#     +
 #
-#     + lambda_2 * m/2
-#       ||u - v_t||^2
+#     lambda_1
+#     <kappa_t, d_t(u, u_prev)>
+#
+#     +
+#
+#     lambda_2
+#     * M/2
+#     * ||u - v_t||_2^2
 #
 # ]
+#
+#
+# where:
+#
+# d_{t,i}
+#
+# =
+#
+# beta / 2
+# *
+# ||A_i(u-u_prev)||_2^2
 # ============================================================
 
 def primal_update(
     y_t,
     u_prev,
-    w_t,
     kappa_t,
     lambda_1,
 ):
@@ -204,11 +373,6 @@ def primal_update(
 
     u_prev = np.asarray(
         u_prev,
-        dtype=float,
-    )
-
-    w_t = np.asarray(
-        w_t,
         dtype=float,
     )
 
@@ -231,9 +395,13 @@ def primal_update(
     # MROO primal objective
     # --------------------------------------------------------
 
-    def objective(u):
+    def objective(
+        u,
+    ):
 
+        # ----------------------------------------------------
         # Hitting cost
+        # ----------------------------------------------------
 
         f = hitting_cost(
             u,
@@ -241,19 +409,40 @@ def primal_update(
         )
 
 
-        # Memory cost vector
+        # ----------------------------------------------------
+        # Vector-valued memory cost
+        #
+        # d_{t,i}
+        #
+        # =
+        #
+        # beta / 2
+        # *
+        # ||A_i(u-u_prev)||_2^2
+        # ----------------------------------------------------
 
         d_t = memory_cost(
-            u,
-            u_prev,
-            w_t,
+
+            u_t=u,
+
+            u_prev=u_prev,
+
+            A_matrices=A_MATRICES,
         )
 
 
+        # ----------------------------------------------------
         # Dual-weighted memory term
+        #
+        # lambda_1
+        # *
+        # <kappa_t, d_t>
+        # ----------------------------------------------------
 
         dual_memory = (
+
             lambda_1
+
             * np.dot(
                 kappa_t,
                 d_t,
@@ -261,12 +450,18 @@ def primal_update(
         )
 
 
+        # ----------------------------------------------------
         # Regularization toward v_t
+        # ----------------------------------------------------
 
         regularization = (
+
             LAMBDA_2
+
             * M
+
             / 2.0
+
             * np.sum(
                 (u - v_t) ** 2
             )
@@ -306,7 +501,6 @@ def primal_update(
         },
     )
 
-
     if not result.success:
 
         raise RuntimeError(
@@ -324,18 +518,38 @@ def primal_update(
 # ============================================================
 # AUXILIARY UPDATE
 #
-# z_t = argmin [
+# Long-term cost:
 #
-#     rho ||z||_inf
+# q(z)
 #
-#     - <kappa_t, z>
+# =
+#
+# ||z||_inf
+#
+#
+# Therefore:
+#
+# z_t
+#
+# =
+#
+# argmin_z [
+#
+#     ||z||_inf
+#
+#     -
+#
+#     <kappa_t, z>
 #
 # ]
 #
-# subject to
 #
-#     0 <= z_i <= Z_MAX
+# subject to:
 #
+# 0 <= z_i <= Z_MAX
+#
+#
+# There is NO rho term.
 # ============================================================
 
 def auxiliary_update(
@@ -348,9 +562,15 @@ def auxiliary_update(
     )
 
 
-    D = len(
-        kappa_t
-    )
+    if kappa_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "kappa_t must have shape "
+            f"({D},), "
+            f"but got {kappa_t.shape}."
+        )
 
 
     # --------------------------------------------------------
@@ -358,9 +578,11 @@ def auxiliary_update(
     #
     # [z_1, ..., z_D, s]
     #
+    # where:
+    #
     # s >= z_i
     #
-    # therefore
+    # Therefore:
     #
     # s = ||z||_inf
     #
@@ -370,7 +592,8 @@ def auxiliary_update(
     objective = np.concatenate(
         [
             -kappa_t,
-            [RHO],
+
+            [1.0],
         ]
     )
 
@@ -389,7 +612,9 @@ def auxiliary_update(
     )
 
 
-    for i in range(D):
+    for i in range(
+        D
+    ):
 
         A_ub[
             i,
@@ -407,7 +632,16 @@ def auxiliary_update(
     )
 
 
+    # --------------------------------------------------------
+    # Bounds
+    #
+    # 0 <= z_i <= Z_MAX
+    #
+    # 0 <= s <= Z_MAX
+    # --------------------------------------------------------
+
     bounds = (
+
         [
             (0.0, Z_MAX)
         ] * D
@@ -442,24 +676,49 @@ def auxiliary_update(
         )
 
 
-    return result.x[:D]
+    return result.x[
+        :D
+    ]
 
 
 # ============================================================
 # DUAL UPDATE
 #
-# g_t =
+# g_t
 #
-#     z_t
-#     - lambda_1 d_t
+# =
+#
+# z_t
+#
+# -
+#
+# lambda_1 d_t
 #
 #
 # kappa_{t+1}
 #
-#     =
+# =
 #
 # [kappa_t - eta g_t]_+
 #
+#
+# equivalently:
+#
+# kappa_{t+1}
+#
+# =
+#
+# [
+#     kappa_t
+#
+#     +
+#
+#     eta(
+#         lambda_1 d_t
+#         -
+#         z_t
+#     )
+# ]_+
 # ============================================================
 
 def dual_update(
@@ -470,14 +729,67 @@ def dual_update(
     lambda_1,
 ):
 
+    kappa_t = np.asarray(
+        kappa_t,
+        dtype=float,
+    )
+
+    z_t = np.asarray(
+        z_t,
+        dtype=float,
+    )
+
+    d_t = np.asarray(
+        d_t,
+        dtype=float,
+    )
+
+
+    if kappa_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "kappa_t must have shape "
+            f"({D},), "
+            f"but got {kappa_t.shape}."
+        )
+
+
+    if z_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "z_t must have shape "
+            f"({D},), "
+            f"but got {z_t.shape}."
+        )
+
+
+    if d_t.shape != (
+        D,
+    ):
+
+        raise ValueError(
+            "d_t must have shape "
+            f"({D},), "
+            f"but got {d_t.shape}."
+        )
+
+
     # --------------------------------------------------------
     # Subgradient
     # --------------------------------------------------------
 
     g_t = (
+
         z_t
+
         -
+
         lambda_1
+
         * d_t
     )
 
@@ -487,9 +799,13 @@ def dual_update(
     # --------------------------------------------------------
 
     kappa_next = (
+
         kappa_t
+
         -
+
         eta
+
         * g_t
     )
 
@@ -511,16 +827,19 @@ def dual_update(
 # RUN MROO
 #
 # eta:
-#     step size
+#     dual step size
 #
 # kappa_init:
-#     initial dual vector
+#     initial D-dimensional dual vector
 #
 # lambda_1:
-#     scalar MROO lambda_1 for THIS run
+#     scalar lambda_1 for this run
 #
-# If lambda_1 is not supplied, use the theoretical value
-# from config.py.
+#
+# If lambda_1 is not supplied:
+#
+#     use LAMBDA_1_THEORY
+#     from config.py
 # ============================================================
 
 def run_mroo(
@@ -574,17 +893,48 @@ def run_mroo(
     )
 
 
-    T, D = (
+    if demand.ndim != 2:
+
+        raise ValueError(
+            "demand must be a 2-dimensional array. "
+            f"Found shape {demand.shape}."
+        )
+
+
+    (
+        T,
+        demand_D,
+    ) = (
         demand.shape
     )
 
 
     # --------------------------------------------------------
+    # Validate demand dimension
+    # --------------------------------------------------------
+
+    if demand_D != D:
+
+        raise ValueError(
+            "Demand dimension does not match "
+            "the configured dimension. "
+            f"Demand dimension = {demand_D}, "
+            f"D = {D}."
+        )
+
+
+    # --------------------------------------------------------
     # Initial action
+    #
+    # u_0 = uniform allocation
     # --------------------------------------------------------
 
     u_prev = (
-        np.ones(D)
+
+        np.ones(
+            D
+        )
+
         / D
     )
 
@@ -599,12 +949,23 @@ def run_mroo(
     ).copy()
 
 
-    if kappa_t.shape != (D,):
+    if kappa_t.shape != (
+        D,
+    ):
 
         raise ValueError(
             "kappa_init must have "
             f"shape ({D},), "
             f"found {kappa_t.shape}."
+        )
+
+
+    if np.any(
+        kappa_t < 0.0
+    ):
+
+        raise ValueError(
+            "kappa_init must be nonnegative."
         )
 
 
@@ -618,8 +979,6 @@ def run_mroo(
 
     memory_history = []
 
-    switching_history = []
-
     kappa_history = [
         kappa_t.copy()
     ]
@@ -629,32 +988,27 @@ def run_mroo(
     # MAIN ONLINE LOOP
     # ========================================================
 
-    for t in range(T):
+    for t in range(
+        T
+    ):
 
-        y_t = demand[t]
-
-
-        # ----------------------------------------------------
-        # Exposure vector
-        # ----------------------------------------------------
-
-        w_t = get_w_t(
-            t=t,
-            y_t=y_t,
-        )
+        y_t = demand[
+            t
+        ]
 
 
         # ----------------------------------------------------
         # Primal update
         # ----------------------------------------------------
 
-        u_t, v_t = primal_update(
+        (
+            u_t,
+            v_t,
+        ) = primal_update(
 
             y_t=y_t,
 
             u_prev=u_prev,
-
-            w_t=w_t,
 
             kappa_t=kappa_t,
 
@@ -663,13 +1017,24 @@ def run_mroo(
 
 
         # ----------------------------------------------------
-        # Realized memory cost
+        # Realized vector-valued memory cost
+        #
+        # d_{t,i}
+        #
+        # =
+        #
+        # beta / 2
+        # *
+        # ||A_i(u_t-u_{t-1})||_2^2
         # ----------------------------------------------------
 
         d_t = memory_cost(
-            u_t,
-            u_prev,
-            w_t,
+
+            u_t=u_t,
+
+            u_prev=u_prev,
+
+            A_matrices=A_MATRICES,
         )
 
 
@@ -719,12 +1084,11 @@ def run_mroo(
                 u_t,
                 y_t,
             )
-
         )
 
 
         # ----------------------------------------------------
-        # Save memory vector
+        # Save vector-valued memory cost
         # ----------------------------------------------------
 
         memory_history.append(
@@ -742,29 +1106,11 @@ def run_mroo(
 
 
         # ----------------------------------------------------
-        # Scalar switching magnitude
-        #
-        # Since ||w_t||_2 = 1:
-        #
-        # ||d_t||_2 = d_bar
-        # ----------------------------------------------------
-
-        switching_history.append(
-
-            np.linalg.norm(
-                d_t,
-                ord=2,
-            )
-
-        )
-
-
-        # ----------------------------------------------------
         # Move to next round
         # ----------------------------------------------------
 
         u_prev = (
-            u_t
+            u_t.copy()
         )
 
         kappa_t = (
@@ -788,10 +1134,6 @@ def run_mroo(
         memory_history
     )
 
-    switching_history = np.asarray(
-        switching_history
-    )
-
     kappa_history = np.asarray(
         kappa_history
     )
@@ -806,9 +1148,20 @@ def run_mroo(
     )
 
 
-    # Current cumulative convention:
+    # --------------------------------------------------------
+    # Long-term cost:
     #
-    # rho * || sum_t d_t ||_inf
+    # || sum_t d_t ||_inf
+    #
+    # =
+    #
+    # max_i
+    # sum_t
+    #
+    # beta / 2
+    # *
+    # ||A_i(u_t-u_{t-1})||_2^2
+    # --------------------------------------------------------
 
     final_long_term_cost = (
         long_term_cost(
@@ -839,9 +1192,6 @@ def run_mroo(
         "memory_history":
             memory_history,
 
-        "switching_history":
-            switching_history,
-
         "kappa_history":
             kappa_history,
 
@@ -859,7 +1209,8 @@ def run_mroo(
 
         "kappa_init":
             np.asarray(
-                kappa_init
+                kappa_init,
+                dtype=float,
             ).copy(),
 
         "lambda_1":
@@ -867,4 +1218,5 @@ def run_mroo(
 
         "lambda_2":
             LAMBDA_2,
+
     }

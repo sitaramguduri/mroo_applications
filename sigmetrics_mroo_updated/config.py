@@ -12,7 +12,7 @@ P_BASE = np.array(
 )
 
 C_BASE = np.array(
-    [25.0, 20.0, 15.0],
+    [90.0, 70.0, 50.0],
     dtype=float,
 )
 
@@ -391,4 +391,62 @@ print(
 print(
     "  lambda_2 =",
     SMROO_MAX_LAMBDA_2,
+)
+
+# ============================================================
+# MEMORY COST MATRICES
+#
+# For each memory channel i:
+#
+# d_{t,i}
+# =
+# beta / 2
+# *
+# || A_i (u_t - u_{t-1}) ||_2^2
+#
+# A_MATRICES[i] = A_i
+#
+# Shape:
+#     (D, D, D)
+#
+# For D = 3:
+#     3 memory channels
+#     each A_i is a 3 x 3 matrix
+# ============================================================
+
+A_1 = np.array(
+    [
+        [1.0, 0.0, 0.0],
+        [0.0, 0, 0.0],
+        [0.0, 0.0, 0],
+    ],
+    dtype=float,
+)
+
+A_2 = np.array(
+    [
+        [0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0],
+    ],
+    dtype=float,
+)
+
+A_3 = np.array(
+    [
+        [0, 0.0, 0.0],
+        [0.0, 0, 0.0],
+        [0.0, 0.0, 1.0],
+    ],
+    dtype=float,
+)
+
+
+A_MATRICES = np.stack(
+    [
+        A_1,
+        A_2,
+        A_3,
+    ],
+    axis=0,
 )

@@ -1,421 +1,604 @@
 from pathlib import Path
-
-
+import ast
 
 import numpy as np
-
 import pandas as pd
-
 import matplotlib.pyplot as plt
 
 
-
-
-
 # ============================================================
-
-# 1. BASE PATH
-
+# 1. PATHS
 # ============================================================
-
-
 
 ALGORITHM_DIR = (
-
     Path(__file__)
-
     .resolve()
-
     .parent
-
 )
-
 
 
 BASE_RESULT_DIR = (
-
     ALGORITHM_DIR
-
-    / "new_results"
-
-    / "window_beta_m_sweep"
-
-    / "rho_7"
-
+    / "matrix_memory_v1"
     / "1min_24hour"
-
-    / "fixed_weights_w1_0p2_w2_0p3_w3_0p5"
-
+    / "matrix_memory"
 )
 
 
+# ------------------------------------------------------------
+# Legacy directory fallback
+# ------------------------------------------------------------
 
+if not BASE_RESULT_DIR.exists():
 
+    legacy_dir = (
+        ALGORITHM_DIR
+        / "matrix_memory_v1"
+        / "1min_24hour"
+        / "matrix_weights"
+    )
 
-# ============================================================
+    if legacy_dir.exists():
 
-# 2. CHOOSE EXPERIMENT
-
-# ============================================================
-
-
-
-SETTING_FOLDER = "beta_75_m_150_T_1440"
-
-
-
-
-
-# ============================================================
-
-# 3. CHOOSE S-MROO-SUM VERSION
-
-#
-
-# "selected"
-
-#     -> use the S-MROO-SUM configuration selected by
-
-#        main_sweep.py
-
-#
-
-# "lambda2_zero"
-
-#     -> use only lambda_2 = 0 from the raw
-
-#        smroo_sum_window_results.csv
-
-# ============================================================
-
-
-
-SMROO_SUM_MODE = "selected"
-
+        BASE_RESULT_DIR = (
+            legacy_dir
+        )
 
 
 # ============================================================
-
-# 4. CONSTANTS / FILES
-
+# 2. EXPERIMENT TO PLOT
 # ============================================================
 
-
+SETTING_FOLDER = (
+    "beta_200_m_100_T_1440"
+)
 
 N_WINDOWS = 100
 
 
-
 SETTING_DIR = (
-
     BASE_RESULT_DIR
-
     / SETTING_FOLDER
-
 )
 
 
+# ============================================================
+# 3. CONFIGURATIONS TO PLOT
+#
+# CHANGE ONLY THIS SECTION when you want a different
+# algorithm configuration in the main comparison.
+# ============================================================
 
-COMBINED_RESULT_FILE = (
 
+# ------------------------------------------------------------
+# MROO
+# ------------------------------------------------------------
+
+MROO_ETA = 1e-7
+
+# Scalar:
+#     [3.0] means effective [3, 3, 3]
+#
+# Or explicitly:
+#     [3.0, 3.0, 3.0]
+#
+MROO_KAPPA = [
+    3.0,
+]
+
+
+# ------------------------------------------------------------
+# DMD
+# ------------------------------------------------------------
+
+DMD_ETA = 1e-7
+
+# DMD normally stores scalar kappa_init.
+DMD_KAPPA = 3.0
+
+
+# ------------------------------------------------------------
+# S-MROO-SUM
+# ------------------------------------------------------------
+
+SMROO_SUM_LAMBDA_1 = 8
+
+SMROO_SUM_LAMBDA_2 = 346
+
+
+# ------------------------------------------------------------
+# S-MROO-MAX
+# ------------------------------------------------------------
+
+SMROO_MAX_LAMBDA_1 = 0.4
+
+SMROO_MAX_LAMBDA_2 = 0
+
+
+# ============================================================
+# 4. RESULT FILES
+# ============================================================
+
+HISTORY_DIR = (
     SETTING_DIR
+    / "history"
+)
 
+
+HISTORY_RESULT_FILE = (
+    HISTORY_DIR
+    / "all_algorithm_window_results.csv"
+)
+
+
+HISTORY_SUMMARY_FILE = (
+    HISTORY_DIR
+    / "all_algorithm_summary.csv"
+)
+
+
+# ------------------------------------------------------------
+# Current-comparison fallback
+# ------------------------------------------------------------
+
+CURRENT_COMPARISON_FILE = (
+    SETTING_DIR
+    / "current_comparison"
     / "combined_algorithm_window_results.csv"
-
 )
 
 
-
-SMROO_SUM_RESULT_FILE = (
-
+LEGACY_COMPARISON_FILE = (
     SETTING_DIR
-
-    / "smroo_sum_window_results.csv"
-
+    / "combined_algorithm_window_results.csv"
 )
 
 
+# ------------------------------------------------------------
+# Raw MROO fallback for tuning plots
+# ------------------------------------------------------------
 
 MROO_RESULT_FILE = (
-
     SETTING_DIR
-
     / "mroo_window_results.csv"
-
 )
-
-
-
-MROO_SUMMARY_FILE = (
-
-    SETTING_DIR
-
-    / "mroo_window_summary.csv"
-
-)
-
-
-MROO_CURRENT_RUN_CONFIG_FILE = (
-
-    SETTING_DIR
-
-    / "mroo_current_run_configs.csv"
-
-)
-
-
-
 
 
 # ============================================================
-
-# 5. CHECK FILES
-
+# 5. GENERAL HELPERS
 # ============================================================
 
+def config_isclose(
+    values,
+    target,
+):
 
-
-if not COMBINED_RESULT_FILE.exists():
-
-
-
-    raise FileNotFoundError(
-
-        f"\nCould not find combined result file:\n"
-
-        f"{COMBINED_RESULT_FILE}"
-
+    return np.isclose(
+        np.asarray(
+            values,
+            dtype=float,
+        ),
+        float(
+            target
+        ),
+        rtol=1e-12,
+        atol=1e-15,
     )
 
 
+def get_kappa_columns(
+    frame,
+):
 
+    prefix = (
+        "kappa_init_"
+    )
 
+    columns = [
 
-if not MROO_RESULT_FILE.exists():
+        column
 
+        for column
+        in frame.columns
 
+        if (
+            str(
+                column
+            ).startswith(
+                prefix
+            )
+            and
+            str(
+                column
+            )[
+                len(
+                    prefix
+                ):
+            ].isdigit()
+        )
+    ]
 
-    raise FileNotFoundError(
+    return sorted(
 
-        f"\nCould not find raw MROO result file:\n"
+        columns,
 
-        f"{MROO_RESULT_FILE}"
+        key=lambda column:
 
+            int(
+                str(
+                    column
+                )[
+                    len(
+                        prefix
+                    ):
+                ]
+            ),
     )
 
 
-if not MROO_CURRENT_RUN_CONFIG_FILE.exists():
+def parse_kappa(
+    value,
+):
+
+    if isinstance(
+        value,
+        (
+            list,
+            tuple,
+            np.ndarray,
+        ),
+    ):
+
+        return (
+            np.asarray(
+                value,
+                dtype=float,
+            )
+            .reshape(-1)
+        )
 
 
+    text = str(
+        value
+    ).strip()
 
-    raise FileNotFoundError(
 
-        f"\nCould not find current-run MROO configuration file:\n"
+    # Scalar value
+    try:
 
-        f"{MROO_CURRENT_RUN_CONFIG_FILE}\n"
+        return np.asarray(
+            [
+                float(
+                    text
+                )
+            ],
+            dtype=float,
+        )
 
-        "Run main_sweep.py with the updated mroo_run.py first."
+    except ValueError:
 
+        pass
+
+
+    parsed = (
+        ast.literal_eval(
+            text
+        )
     )
 
 
+    return (
+        np.asarray(
+            parsed,
+            dtype=float,
+        )
+        .reshape(-1)
+    )
 
+
+def expand_kappa(
+    value,
+    dimension,
+):
+
+    values = (
+        np.asarray(
+            value,
+            dtype=float,
+        )
+        .reshape(-1)
+    )
+
+
+    if values.size == 1:
+
+        return np.full(
+            dimension,
+            float(
+                values[0]
+            ),
+            dtype=float,
+        )
+
+
+    if values.size != dimension:
+
+        raise RuntimeError(
+            "Kappa dimension mismatch. "
+            f"Requested {values.size} values "
+            f"but data has dimension {dimension}."
+        )
+
+
+    return values
+
+
+def kappa_string(
+    values,
+):
+
+    values = (
+        np.asarray(
+            values,
+            dtype=float,
+        )
+        .reshape(-1)
+    )
+
+
+    return (
+        "["
+        +
+        ", ".join(
+            f"{value:.6g}"
+            for value
+            in values
+        )
+        +
+        "]"
+    )
+
+
+def first_non_nan(
+    frame,
+    column,
+):
+
+    if (
+        column
+        not in frame.columns
+    ):
+
+        return np.nan
+
+
+    values = (
+        frame[
+            column
+        ]
+        .dropna()
+    )
+
+
+    if len(
+        values
+    ) == 0:
+
+        return np.nan
+
+
+    return (
+        values.iloc[0]
+    )
+
+
+# ============================================================
+# 6. LOAD PERSISTENT HISTORY
+# ============================================================
+
+if HISTORY_RESULT_FILE.exists():
+
+    all_results_df = (
+        pd.read_csv(
+            HISTORY_RESULT_FILE,
+            low_memory=False,
+        )
+    )
+
+    DATA_SOURCE = (
+        HISTORY_RESULT_FILE
+    )
+
+
+else:
+
+    # --------------------------------------------------------
+    # Fallback for experiments generated before history/
+    # existed.
+    # --------------------------------------------------------
+
+    if CURRENT_COMPARISON_FILE.exists():
+
+        all_results_df = (
+            pd.read_csv(
+                CURRENT_COMPARISON_FILE,
+                low_memory=False,
+            )
+        )
+
+        DATA_SOURCE = (
+            CURRENT_COMPARISON_FILE
+        )
+
+
+    elif LEGACY_COMPARISON_FILE.exists():
+
+        all_results_df = (
+            pd.read_csv(
+                LEGACY_COMPARISON_FILE,
+                low_memory=False,
+            )
+        )
+
+        DATA_SOURCE = (
+            LEGACY_COMPARISON_FILE
+        )
+
+
+    else:
+
+        raise FileNotFoundError(
+            "\nCould not find any result file.\n"
+            f"Tried:\n"
+            f"{HISTORY_RESULT_FILE}\n"
+            f"{CURRENT_COMPARISON_FILE}\n"
+            f"{LEGACY_COMPARISON_FILE}"
+        )
 
 
 print(
-
     "\n========================================"
-
 )
 
-
-
 print(
-
-    "READING RESULTS"
-
+    "MATRIX-MEMORY PLOTTER"
 )
 
-
-
 print(
-
     "========================================"
-
 )
-
-
 
 print(
+    "\nSetting:"
+)
 
-    COMBINED_RESULT_FILE
+print(
+    SETTING_DIR
+)
 
+print(
+    "\nReading:"
+)
+
+print(
+    DATA_SOURCE
 )
 
 
-
-
-
+# ============================================================
+# 7. VALIDATE DATA
 # ============================================================
 
-# 6. LOAD COMBINED RESULTS
+required_columns = {
 
-# ============================================================
+    "algorithm",
+
+    "window_id",
+
+    "start_index",
+
+    "end_index",
+
+    "hitting_cost",
+
+    "long_term_cost",
+
+    "total_cost",
+
+    "beta",
+
+    "m",
+}
 
 
-
-df = pd.read_csv(
-
-    COMBINED_RESULT_FILE
-
+missing_columns = (
+    required_columns
+    -
+    set(
+        all_results_df.columns
+    )
 )
 
 
-
-
-
-# ============================================================
-
-# 7. EXTRACT BETA, M, WINDOW SIZE
-
-# ============================================================
-
-
-
-if "beta" not in df.columns:
-
-
+if missing_columns:
 
     raise RuntimeError(
-
-        "'beta' column not found."
-
+        "Result file is missing columns: "
+        f"{sorted(missing_columns)}"
     )
 
 
-
-
-
-if "m" not in df.columns:
-
-
-
-    raise RuntimeError(
-
-        "'m' column not found."
-
-    )
-
-
-
-
+# ============================================================
+# 8. EXPERIMENT INFORMATION
+# ============================================================
 
 beta_values = (
 
-    df[
-
+    all_results_df[
         "beta"
-
     ]
+
+    .dropna()
 
     .astype(float)
 
     .unique()
-
 )
-
-
-
 
 
 m_values = (
 
-    df[
-
+    all_results_df[
         "m"
-
     ]
+
+    .dropna()
 
     .astype(float)
 
     .unique()
-
 )
 
 
-
-
-
-if len(beta_values) != 1:
-
-
+if len(
+    beta_values
+) != 1:
 
     raise RuntimeError(
-
-        f"Expected exactly one beta value, "
-
-        f"found {beta_values}"
-
+        "Expected one beta value, found "
+        f"{beta_values}."
     )
 
 
-
-
-
-if len(m_values) != 1:
-
-
+if len(
+    m_values
+) != 1:
 
     raise RuntimeError(
-
-        f"Expected exactly one m value, "
-
-        f"found {m_values}"
-
+        "Expected one m value, found "
+        f"{m_values}."
     )
-
-
-
 
 
 BETA = float(
-
     beta_values[0]
-
 )
-
-
-
 
 
 M = float(
-
     m_values[0]
-
 )
 
 
+if (
+    "experiment_window_size"
+    in all_results_df.columns
+):
 
+    window_sizes = (
 
-
-# ------------------------------------------------------------
-
-# Window size
-
-# ------------------------------------------------------------
-
-
-
-if "window_size" in df.columns:
-
-
-
-    window_values = (
-
-        df[
-
-            "window_size"
-
+        all_results_df[
+            "experiment_window_size"
         ]
 
         .dropna()
@@ -423,521 +606,1056 @@ if "window_size" in df.columns:
         .astype(int)
 
         .unique()
-
     )
 
+else:
+
+    window_sizes = []
 
 
-    if len(window_values) != 1:
-
-
-
-        raise RuntimeError(
-
-            f"Expected one window size, "
-
-            f"found {window_values}"
-
-        )
-
-
+if len(
+    window_sizes
+) == 1:
 
     WINDOW_SIZE = int(
-
-        window_values[0]
-
+        window_sizes[0]
     )
-
 
 
 else:
 
-
-
     try:
-
-
 
         WINDOW_SIZE = int(
 
             SETTING_FOLDER
 
             .split(
-
                 "_T_"
-
             )[-1]
-
         )
 
-
-
-    except Exception:
-
-
+    except Exception as error:
 
         raise RuntimeError(
-
             "Could not determine window size."
-
-        )
-
+        ) from error
 
 
-
-
-# ============================================================
-
-# 1-minute resolution:
-
-#
-
-# 60 slots = 1 hour
-
-# 1440 slots = 24 hours
-
-# ============================================================
-
-
-
-window_hours = (
-
+WINDOW_HOURS = (
     WINDOW_SIZE
-
-    / 60.0
-
+    /
+    60.0
 )
 
 
+print(
+    "\n========================================"
+)
 
+print(
+    "EXPERIMENT"
+)
+
+print(
+    "========================================"
+)
+
+print(
+    "beta        =",
+    BETA,
+)
+
+print(
+    "m           =",
+    M,
+)
+
+print(
+    "beta/m      =",
+    BETA / M,
+)
+
+print(
+    "window size =",
+    WINDOW_SIZE,
+)
+
+print(
+    "hours       =",
+    WINDOW_HOURS,
+)
+
+
+print(
+    "\nStored rows by algorithm:"
+)
+
+print(
+    all_results_df[
+        "algorithm"
+    ]
+    .value_counts()
+)
 
 
 # ============================================================
-
-# 8. OPTIONAL:
-
-# REPLACE S-MROO-SUM WITH lambda_2 = 0
-
+# 9. SHOW AVAILABLE CONFIGURATIONS
 # ============================================================
 
+print(
+    "\n========================================"
+)
+
+print(
+    "AVAILABLE STORED CONFIGURATIONS"
+)
+
+print(
+    "========================================"
+)
 
 
-if SMROO_SUM_MODE == "lambda2_zero":
+for algorithm in [
+    "S-MROO-SUM",
+    "S-MROO-MAX",
+    "DMD",
+    "MROO",
+]:
+
+    algorithm_df = (
+
+        all_results_df[
+            all_results_df[
+                "algorithm"
+            ]
+            ==
+            algorithm
+        ]
+
+        .copy()
+    )
 
 
+    print(
+        f"\n{algorithm}:"
+    )
 
-    if not SMROO_SUM_RESULT_FILE.exists():
+
+    if len(
+        algorithm_df
+    ) == 0:
+
+        print(
+            "  NONE"
+        )
+
+        continue
 
 
+    if algorithm in {
+        "S-MROO-SUM",
+        "S-MROO-MAX",
+    }:
 
-        raise FileNotFoundError(
+        columns = [
 
-            "\nCould not find raw S-MROO-SUM file:\n"
+            column
 
-            f"{SMROO_SUM_RESULT_FILE}"
+            for column
+            in [
+                "lambda_1",
+                "lambda_2",
+            ]
 
+            if column
+            in algorithm_df.columns
+        ]
+
+
+    elif algorithm == "DMD":
+
+        columns = [
+
+            column
+
+            for column
+            in [
+                "eta",
+                "kappa_init",
+            ]
+
+            if column
+            in algorithm_df.columns
+        ]
+
+
+    else:
+
+        columns = [
+
+            column
+
+            for column
+            in [
+                "lambda_1",
+                "eta",
+            ]
+
+            if column
+            in algorithm_df.columns
+        ]
+
+
+        columns.extend(
+            get_kappa_columns(
+                algorithm_df
+            )
         )
 
 
+        if (
+            len(
+                get_kappa_columns(
+                    algorithm_df
+                )
+            ) == 0
+            and
+            "kappa_init"
+            in algorithm_df.columns
+        ):
+
+            columns.append(
+                "kappa_init"
+            )
 
 
+    if (
+        "config_id"
+        in algorithm_df.columns
+    ):
 
-    print(
+        columns.append(
+            "config_id"
+        )
 
-        "\n========================================"
 
+    if len(
+        columns
+    ) > 0:
+
+        available = (
+
+            algorithm_df[
+                columns
+            ]
+
+            .drop_duplicates()
+
+            .reset_index(
+                drop=True
+            )
+        )
+
+
+        print(
+            available.to_string(
+                index=False
+            )
+        )
+
+
+# ============================================================
+# 10. SELECT S-MROO CONFIGURATION
+# ============================================================
+
+def select_smroo(
+    frame,
+    algorithm,
+    lambda_1,
+    lambda_2,
+):
+
+    algorithm_df = (
+
+        frame[
+            frame[
+                "algorithm"
+            ]
+            ==
+            algorithm
+        ]
+
+        .copy()
     )
 
 
+    if len(
+        algorithm_df
+    ) == 0:
 
-    print(
+        raise RuntimeError(
+            f"No {algorithm} results exist."
+        )
 
-        "FILTERING S-MROO-SUM"
 
+    required = {
+        "lambda_1",
+        "lambda_2",
+    }
+
+
+    if not required.issubset(
+        algorithm_df.columns
+    ):
+
+        raise RuntimeError(
+            f"{algorithm} results do not contain "
+            "lambda_1/lambda_2."
+        )
+
+
+    mask = (
+
+        config_isclose(
+
+            algorithm_df[
+                "lambda_1"
+            ],
+
+            lambda_1,
+        )
+
+        &
+
+        config_isclose(
+
+            algorithm_df[
+                "lambda_2"
+            ],
+
+            lambda_2,
+        )
     )
 
 
+    selected = (
 
-    print(
+        algorithm_df[
+            mask
+        ]
 
-        "========================================"
+        .copy()
 
+        .drop_duplicates(
+
+            subset=[
+                "window_id",
+            ],
+
+            keep="last",
+        )
+
+        .sort_values(
+            "window_id"
+        )
+
+        .reset_index(
+            drop=True
+        )
     )
 
 
+    if len(
+        selected
+    ) != N_WINDOWS:
 
+        available = (
 
+            algorithm_df[
+                [
+                    "lambda_1",
+                    "lambda_2",
+                ]
+            ]
 
-    smroo_df = pd.read_csv(
+            .drop_duplicates()
 
-        SMROO_SUM_RESULT_FILE
-
-    )
-
-
-
-
-
-    if "lambda_2" not in smroo_df.columns:
-
+            .sort_values(
+                [
+                    "lambda_1",
+                    "lambda_2",
+                ]
+            )
+        )
 
 
         raise RuntimeError(
-
-            "'lambda_2' column not found in "
-
-            "smroo_sum_window_results.csv"
-
+            f"\n{algorithm}: configuration not available.\n"
+            f"Requested:\n"
+            f"  lambda_1 = {lambda_1}\n"
+            f"  lambda_2 = {lambda_2}\n"
+            f"Expected {N_WINDOWS} rows but found "
+            f"{len(selected)}.\n\n"
+            "Available configurations:\n"
+            f"{available.to_string(index=False)}"
         )
 
 
+    return selected
 
 
+# ============================================================
+# 11. SELECT DMD CONFIGURATION
+# ============================================================
 
-    print(
+def select_dmd(
+    frame,
+    eta,
+    kappa,
+):
 
-        "\nAvailable lambda_2 values:"
+    algorithm_df = (
 
+        frame[
+            frame[
+                "algorithm"
+            ]
+            ==
+            "DMD"
+        ]
+
+        .copy()
     )
 
 
+    if len(
+        algorithm_df
+    ) == 0:
 
-    print(
+        raise RuntimeError(
+            "No DMD results exist."
+        )
 
-        sorted(
 
-            smroo_df[
+    if (
+        "eta"
+        not in algorithm_df.columns
+        or
+        "kappa_init"
+        not in algorithm_df.columns
+    ):
 
-                "lambda_2"
+        raise RuntimeError(
+            "DMD results require eta and kappa_init."
+        )
 
+
+    mask = (
+
+        config_isclose(
+
+            algorithm_df[
+                "eta"
+            ],
+
+            eta,
+        )
+
+        &
+
+        config_isclose(
+
+            algorithm_df[
+                "kappa_init"
+            ],
+
+            kappa,
+        )
+    )
+
+
+    selected = (
+
+        algorithm_df[
+            mask
+        ]
+
+        .copy()
+
+        .drop_duplicates(
+
+            subset=[
+                "window_id",
+            ],
+
+            keep="last",
+        )
+
+        .sort_values(
+            "window_id"
+        )
+
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    if len(
+        selected
+    ) != N_WINDOWS:
+
+        available = (
+
+            algorithm_df[
+                [
+                    "eta",
+                    "kappa_init",
+                ]
+            ]
+
+            .drop_duplicates()
+
+            .sort_values(
+                [
+                    "eta",
+                    "kappa_init",
+                ]
+            )
+        )
+
+
+        raise RuntimeError(
+            "\nDMD configuration not available.\n"
+            f"Requested:\n"
+            f"  eta   = {eta}\n"
+            f"  kappa = {kappa}\n"
+            f"Expected {N_WINDOWS} rows but found "
+            f"{len(selected)}.\n\n"
+            "Available configurations:\n"
+            f"{available.to_string(index=False)}"
+        )
+
+
+    return selected
+
+
+# ============================================================
+# 12. SELECT MROO CONFIGURATION
+# ============================================================
+
+def select_mroo(
+    frame,
+    eta,
+    kappa,
+):
+
+    algorithm_df = (
+
+        frame[
+            frame[
+                "algorithm"
+            ]
+            ==
+            "MROO"
+        ]
+
+        .copy()
+    )
+
+
+    if len(
+        algorithm_df
+    ) == 0:
+
+        raise RuntimeError(
+            "No MROO results exist."
+        )
+
+
+    if (
+        "eta"
+        not in algorithm_df.columns
+    ):
+
+        raise RuntimeError(
+            "MROO results do not contain eta."
+        )
+
+
+    mask = (
+        config_isclose(
+
+            algorithm_df[
+                "eta"
+            ],
+
+            eta,
+        )
+    )
+
+
+    kappa_columns = (
+        get_kappa_columns(
+            algorithm_df
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # New MROO format:
+    # kappa_init_0, kappa_init_1, ...
+    # --------------------------------------------------------
+
+    if len(
+        kappa_columns
+    ) > 0:
+
+        target_kappa = (
+            expand_kappa(
+                kappa,
+                len(
+                    kappa_columns
+                ),
+            )
+        )
+
+
+        for (
+            index,
+            column,
+        ) in enumerate(
+            kappa_columns
+        ):
+
+            mask &= (
+
+                config_isclose(
+
+                    algorithm_df[
+                        column
+                    ],
+
+                    target_kappa[
+                        index
+                    ],
+                )
+            )
+
+
+    # --------------------------------------------------------
+    # Serialized kappa fallback
+    # --------------------------------------------------------
+
+    elif (
+        "kappa_init"
+        in algorithm_df.columns
+    ):
+
+        target = (
+            np.asarray(
+                kappa,
+                dtype=float,
+            )
+            .reshape(-1)
+        )
+
+
+        def row_matches_kappa(
+            value,
+        ):
+
+            if pd.isna(
+                value
+            ):
+
+                return False
+
+
+            current = (
+                parse_kappa(
+                    value
+                )
+            )
+
+
+            if target.size == 1:
+
+                target_effective = (
+                    np.full(
+                        current.size,
+                        float(
+                            target[0]
+                        ),
+                    )
+                )
+
+            else:
+
+                target_effective = (
+                    target
+                )
+
+
+            return bool(
+
+                current.shape
+                ==
+                target_effective.shape
+
+                and
+
+                np.allclose(
+
+                    current,
+
+                    target_effective,
+
+                    rtol=1e-12,
+
+                    atol=1e-15,
+                )
+            )
+
+
+        mask &= (
+
+            algorithm_df[
+                "kappa_init"
+            ]
+
+            .map(
+                row_matches_kappa
+            )
+
+            .to_numpy(
+                dtype=bool
+            )
+        )
+
+
+    else:
+
+        raise RuntimeError(
+            "MROO results contain neither "
+            "kappa_init nor kappa_init_i columns."
+        )
+
+
+    selected = (
+
+        algorithm_df[
+            mask
+        ]
+
+        .copy()
+    )
+
+
+    # --------------------------------------------------------
+    # There may theoretically be >1 lambda_1 with same
+    # eta/kappa.
+    #
+    # If config_id exists and multiple configurations match,
+    # show them instead of silently picking one.
+    # --------------------------------------------------------
+
+    if (
+        "config_id"
+        in selected.columns
+    ):
+
+        matching_config_ids = (
+
+            selected[
+                "config_id"
             ]
 
             .dropna()
 
-            .astype(float)
-
             .unique()
-
         )
 
-    )
+
+        if len(
+            matching_config_ids
+        ) > 1:
+
+            available = (
+
+                selected[
+                    [
+                        column
+                        for column
+                        in [
+                            "config_id",
+                            "lambda_1",
+                            "eta",
+                        ]
+                        +
+                        kappa_columns
+                        if column
+                        in selected.columns
+                    ]
+                ]
+
+                .drop_duplicates()
+            )
 
 
+            raise RuntimeError(
+                "\nMore than one MROO configuration "
+                "matches the requested eta/kappa.\n"
+                "The stored data differ in another "
+                "parameter such as lambda_1.\n\n"
+                f"{available.to_string(index=False)}"
+            )
 
 
+    selected = (
 
-    smroo_zero_df = smroo_df[
+        selected
 
-        np.isclose(
+        .drop_duplicates(
 
-            smroo_df[
+            subset=[
+                "window_id",
+            ],
 
-                "lambda_2"
-
-            ].astype(float),
-
-            0.0,
-
+            keep="last",
         )
 
-    ].copy()
+        .sort_values(
+            "window_id"
+        )
 
-
-
-
-
-    print(
-
-        "\nOriginal S-MROO-SUM rows:",
-
-        len(smroo_df)
-
+        .reset_index(
+            drop=True
+        )
     )
 
 
+    if len(
+        selected
+    ) != N_WINDOWS:
+
+        display_columns = [
+
+            column
+
+            for column
+            in (
+                [
+                    "lambda_1",
+                    "eta",
+                ]
+                +
+                kappa_columns
+            )
+
+            if column
+            in algorithm_df.columns
+        ]
 
 
+        if (
+            len(
+                kappa_columns
+            ) == 0
+            and
+            "kappa_init"
+            in algorithm_df.columns
+        ):
 
-    print(
-
-        "lambda_2 = 0 rows:",
-
-        len(smroo_zero_df)
-
-    )
+            display_columns.append(
+                "kappa_init"
+            )
 
 
+        available = (
 
+            algorithm_df[
+                display_columns
+            ]
 
-
-    if len(smroo_zero_df) == 0:
-
+            .drop_duplicates()
+        )
 
 
         raise RuntimeError(
-
-            "No S-MROO-SUM rows with "
-
-            "lambda_2 = 0 were found."
-
+            "\nMROO configuration not available.\n"
+            f"Requested:\n"
+            f"  eta   = {eta}\n"
+            f"  kappa = {kappa}\n"
+            f"Expected {N_WINDOWS} rows but found "
+            f"{len(selected)}.\n\n"
+            "Available configurations:\n"
+            f"{available.to_string(index=False)}"
         )
 
 
+    return selected
 
 
+# ============================================================
+# 13. SELECT NON-TUNED ALGORITHM
+# ============================================================
 
-    smroo_zero_df[
+def select_simple_algorithm(
+    frame,
+    algorithm,
+):
 
-        "beta"
+    algorithm_df = (
 
-    ] = BETA
-
-
-
-
-
-    smroo_zero_df[
-
-        "m"
-
-    ] = M
-
-
-
-
-
-    smroo_zero_df[
-
-        "beta_over_m"
-
-    ] = (
-
-        BETA / M
-
-    )
-
-
-
-
-
-    smroo_zero_df[
-
-        "algorithm"
-
-    ] = "S-MROO-SUM"
-
-
-
-
-
-    if "window_size" not in smroo_zero_df.columns:
-
-
-
-        smroo_zero_df[
-
-            "window_size"
-
-        ] = WINDOW_SIZE
-
-
-
-
-
-    # Remove currently selected S-MROO-SUM.
-
-    df = df[
-
-        df[
-
-            "algorithm"
-
+        frame[
+            frame[
+                "algorithm"
+            ]
+            ==
+            algorithm
         ]
 
-        != "S-MROO-SUM"
+        .copy()
 
-    ].copy()
+        .drop_duplicates(
+
+            subset=[
+                "window_id",
+            ],
+
+            keep="last",
+        )
+
+        .sort_values(
+            "window_id"
+        )
+
+        .reset_index(
+            drop=True
+        )
+    )
 
 
+    if len(
+        algorithm_df
+    ) != N_WINDOWS:
+
+        raise RuntimeError(
+            f"{algorithm}: expected {N_WINDOWS} rows "
+            f"but found {len(algorithm_df)}."
+        )
 
 
+    return algorithm_df
 
-    # Add lambda_2 = 0 version.
 
-    df = pd.concat(
+# ============================================================
+# 14. SELECT REQUESTED CONFIGURATIONS
+# ============================================================
 
-        [
+offline_df = (
+    select_simple_algorithm(
+        all_results_df,
+        "OFFLINE-OPT",
+    )
+)
 
-            df,
 
-            smroo_zero_df,
+greedy_df = (
+    select_simple_algorithm(
+        all_results_df,
+        "GREEDY",
+    )
+)
 
-        ],
 
+smroo_sum_df = (
+    select_smroo(
+
+        all_results_df,
+
+        "S-MROO-SUM",
+
+        SMROO_SUM_LAMBDA_1,
+
+        SMROO_SUM_LAMBDA_2,
+    )
+)
+
+
+smroo_max_df = (
+    select_smroo(
+
+        all_results_df,
+
+        "S-MROO-MAX",
+
+        SMROO_MAX_LAMBDA_1,
+
+        SMROO_MAX_LAMBDA_2,
+    )
+)
+
+
+dmd_df = (
+    select_dmd(
+
+        all_results_df,
+
+        DMD_ETA,
+
+        DMD_KAPPA,
+    )
+)
+
+
+mroo_df = (
+    select_mroo(
+
+        all_results_df,
+
+        MROO_ETA,
+
+        MROO_KAPPA,
+    )
+)
+
+
+# ============================================================
+# 15. BUILD MAIN COMPARISON TABLE
+# ============================================================
+
+comparison_frames = {
+
+    "OFFLINE-OPT":
+        offline_df,
+
+    "GREEDY":
+        greedy_df,
+
+    "S-MROO-SUM":
+        smroo_sum_df,
+
+    "S-MROO-MAX":
+        smroo_max_df,
+
+    "DMD":
+        dmd_df,
+
+    "MROO":
+        mroo_df,
+}
+
+
+comparison_df = (
+    pd.concat(
+        comparison_frames.values(),
         ignore_index=True,
-
         sort=False,
-
     )
-
-
-
-
-
-elif SMROO_SUM_MODE == "selected":
-
-
-
-    print(
-
-        "\nUsing S-MROO-SUM already stored in "
-
-        "combined_algorithm_window_results.csv"
-
-    )
-
-
-
-
-
-else:
-
-
-
-    raise ValueError(
-
-        "SMROO_SUM_MODE must be either "
-
-        "'selected' or 'lambda2_zero'."
-
-    )
-
-
-
-
-
-# ============================================================
-
-# 9. PRINT EXPERIMENT INFORMATION
-
-# ============================================================
-
-
-
-print(
-
-    "\n========================================"
-
 )
-
-
-
-print(
-
-    "SELECTED EXPERIMENT"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-
-
-print(
-
-    f"folder          = {SETTING_FOLDER}"
-
-)
-
-
-
-print(
-
-    f"beta            = {BETA:g}"
-
-)
-
-
-
-print(
-
-    f"m               = {M:g}"
-
-)
-
-
-
-print(
-
-    f"beta/m          = {BETA / M:g}"
-
-)
-
-
-
-print(
-
-    f"window size     = {WINDOW_SIZE}"
-
-)
-
-
-
-print(
-
-    f"window          = {window_hours:g} hours"
-
-)
-
-
-
-print(
-
-    f"S-MROO-SUM mode = {SMROO_SUM_MODE}"
-
-)
-
-
-
-
-
-print(
-
-    "\nRows by algorithm:"
-
-)
-
-
-
-print(
-
-    df[
-
-        "algorithm"
-
-    ]
-
-    .value_counts()
-
-)
-
-
-
-
-
-# ============================================================
-
-# 10. ALGORITHM ORDER
-
-# ============================================================
-
 
 
 PLOT_ORDER = [
@@ -953,246 +1671,34 @@ PLOT_ORDER = [
     "DMD",
 
     "MROO",
-
 ]
-
-
-
-
-
-# ============================================================
-
-# 11. ALGORITHM LABELS
-
-# ============================================================
-
-
-
-if SMROO_SUM_MODE == "lambda2_zero":
-
-
-
-    smroo_sum_label = (
-
-        "S-MROO\nSUM\n"
-
-        r"$\lambda_2=0$"
-
-    )
-
-
-
-else:
-
-
-
-    smroo_sum_label = (
-
-        "S-MROO\nSUM"
-
-    )
-
-
-
 
 
 ALGORITHM_LABELS = {
 
-
-
     "OFFLINE-OPT":
-
         "OPT",
 
-
-
     "GREEDY":
-
         "GRD",
 
-
-
     "S-MROO-SUM":
-
-        smroo_sum_label,
-
-
+        "S-MROO\nSUM",
 
     "S-MROO-MAX":
-
         "S-MROO\nMAX",
 
-
-
     "DMD":
-
         "DMD",
 
-
-
     "MROO":
-
         "MROO",
-
-
-
 }
 
 
-
-
-
-# ------------------------------------------------------------
-
-# Only keep algorithms that actually exist.
-
-# ------------------------------------------------------------
-
-
-
-available_algorithms = set(
-
-    df[
-
-        "algorithm"
-
-    ]
-
-    .unique()
-
-)
-
-
-
-
-
-PLOT_ORDER = [
-
-    algorithm
-
-    for algorithm
-
-    in PLOT_ORDER
-
-    if algorithm
-
-    in available_algorithms
-
-]
-
-
-
-
-
-if len(
-
-    PLOT_ORDER
-
-) == 0:
-
-
-
-    raise RuntimeError(
-
-        "No expected algorithms found."
-
-    )
-
-
-
-
-
-print(
-
-    "\nPlotting algorithms:"
-
-)
-
-
-
-print(
-
-    PLOT_ORDER
-
-)
-
-
-
-
-
 # ============================================================
-
-# 12. VERIFY NUMBER OF WINDOWS
-
+# 16. VERIFY SAME WINDOWS
 # ============================================================
-
-
-
-for algorithm in PLOT_ORDER:
-
-
-
-    algorithm_df = df[
-
-        df[
-
-            "algorithm"
-
-        ]
-
-        == algorithm
-
-    ]
-
-
-
-
-
-    count = len(
-
-        algorithm_df
-
-    )
-
-
-
-
-
-    print(
-
-        f"{algorithm}: {count} rows"
-
-    )
-
-
-
-
-
-    if count != N_WINDOWS:
-
-
-
-        print(
-
-            f"WARNING: "
-
-            f"{algorithm} has {count} rows, "
-
-            f"expected {N_WINDOWS}."
-
-        )
-
-
-
-
-
-# ============================================================
-
-# 13. VERIFY SAME WINDOWS
-
-# ============================================================
-
-
 
 required_window_columns = [
 
@@ -1201,603 +1707,382 @@ required_window_columns = [
     "start_index",
 
     "end_index",
-
 ]
 
 
+reference_windows = None
 
 
+for algorithm in PLOT_ORDER:
 
-if all(
-
-    column in df.columns
-
-    for column
-
-    in required_window_columns
-
-):
-
-
-
-    reference_windows = None
-
-
-
-
-
-    for algorithm in PLOT_ORDER:
-
-
-
-        algorithm_windows = (
-
-            df[
-
-                df[
-
-                    "algorithm"
-
-                ]
-
-                == algorithm
-
-            ][
-
-                required_window_columns
-
-            ]
-
-            .sort_values(
-
-                "window_id"
-
-            )
-
-            .reset_index(
-
-                drop=True
-
-            )
-
-        )
-
-
-
-
-
-        if reference_windows is None:
-
-
-
-            reference_windows = (
-
-                algorithm_windows
-
-            )
-
-
-
-        elif not algorithm_windows.equals(
-
-            reference_windows
-
-        ):
-
-
-
-            raise RuntimeError(
-
-                "Algorithms did not use "
-
-                "the same windows."
-
-            )
-
-
-
-
-
-    print(
-
-        "\nVerified: all algorithms "
-
-        "use the same windows."
-
+    algorithm_df = (
+        comparison_frames[
+            algorithm
+        ]
     )
 
 
+    windows = (
 
-
-
-# ============================================================
-
-# 14. ALGORITHM COST SUMMARY
-
-# ============================================================
-
-
-
-summary = (
-
-    df[
-
-        df[
-
-            "algorithm"
-
+        algorithm_df[
+            required_window_columns
         ]
 
-        .isin(
-
-            PLOT_ORDER
-
+        .sort_values(
+            "window_id"
         )
 
-    ]
-
-
-
-    .groupby(
-
-        "algorithm"
-
+        .reset_index(
+            drop=True
+        )
     )
 
 
+    if reference_windows is None:
 
-    .agg(
-
-
-
-        mean_hitting=(
-
-            "hitting_cost",
-
-            "mean",
-
-        ),
+        reference_windows = (
+            windows
+        )
 
 
+    elif not windows.equals(
+        reference_windows
+    ):
 
-        std_hitting=(
-
-            "hitting_cost",
-
-            "std",
-
-        ),
-
-
-
-        mean_long_term=(
-
-            "long_term_cost",
-
-            "mean",
-
-        ),
-
-
-
-        std_long_term=(
-
-            "long_term_cost",
-
-            "std",
-
-        ),
-
-
-
-        mean_total=(
-
-            "total_cost",
-
-            "mean",
-
-        ),
-
-
-
-        std_total=(
-
-            "total_cost",
-
-            "std",
-
-        ),
-
-
-
-    )
-
-
-
-    .reindex(
-
-        PLOT_ORDER
-
-    )
-
-)
-
-
-
+        raise RuntimeError(
+            f"{algorithm} did not use the same "
+            "window definitions as the other algorithms."
+        )
 
 
 print(
+    "\nVerified: all selected configurations "
+    "use exactly the same windows."
+)
 
+
+# ============================================================
+# 17. PRINT REQUESTED CONFIGURATIONS
+# ============================================================
+
+print(
     "\n========================================"
-
 )
 
-
-
 print(
-
-    "ALGORITHM COST SUMMARY"
-
+    "SELECTED CONFIGURATIONS"
 )
 
-
-
 print(
-
     "========================================"
-
 )
-
 
 
 print(
+    "\nS-MROO-SUM"
+)
 
-    summary.to_string()
+print(
+    "  lambda_1 =",
+    SMROO_SUM_LAMBDA_1,
+)
 
+print(
+    "  lambda_2 =",
+    SMROO_SUM_LAMBDA_2,
 )
 
 
+print(
+    "\nS-MROO-MAX"
+)
 
+print(
+    "  lambda_1 =",
+    SMROO_MAX_LAMBDA_1,
+)
+
+print(
+    "  lambda_2 =",
+    SMROO_MAX_LAMBDA_2,
+)
+
+
+print(
+    "\nDMD"
+)
+
+print(
+    "  eta       =",
+    DMD_ETA,
+)
+
+print(
+    "  kappa     =",
+    DMD_KAPPA,
+)
+
+
+print(
+    "\nMROO"
+)
+
+print(
+    "  eta       =",
+    MROO_ETA,
+)
+
+print(
+    "  kappa     =",
+    MROO_KAPPA,
+)
+
+
+# ------------------------------------------------------------
+# Print stored MROO lambda if one exists
+# ------------------------------------------------------------
+
+mroo_lambda_1 = (
+    first_non_nan(
+        mroo_df,
+        "lambda_1",
+    )
+)
+
+
+if not pd.isna(
+    mroo_lambda_1
+):
+
+    print(
+        "  lambda_1  =",
+        mroo_lambda_1,
+    )
 
 
 # ============================================================
-
-# 15. COSTS TO PLOT
-
+# 18. COST SUMMARY
 # ============================================================
 
+summary_rows = []
 
+
+for algorithm in PLOT_ORDER:
+
+    algorithm_df = (
+        comparison_frames[
+            algorithm
+        ]
+    )
+
+
+    row = {
+
+        "algorithm":
+            algorithm,
+
+        "n_windows":
+            len(
+                algorithm_df
+            ),
+
+        "lambda_1":
+            first_non_nan(
+                algorithm_df,
+                "lambda_1",
+            ),
+
+        "lambda_2":
+            first_non_nan(
+                algorithm_df,
+                "lambda_2",
+            ),
+
+        "eta":
+            first_non_nan(
+                algorithm_df,
+                "eta",
+            ),
+
+        "kappa_init":
+            first_non_nan(
+                algorithm_df,
+                "kappa_init",
+            ),
+
+        "mean_hitting_cost":
+            algorithm_df[
+                "hitting_cost"
+            ].mean(),
+
+        "std_hitting_cost":
+            algorithm_df[
+                "hitting_cost"
+            ].std(),
+
+        "mean_long_term_cost":
+            algorithm_df[
+                "long_term_cost"
+            ].mean(),
+
+        "std_long_term_cost":
+            algorithm_df[
+                "long_term_cost"
+            ].std(),
+
+        "mean_total_cost":
+            algorithm_df[
+                "total_cost"
+            ].mean(),
+
+        "std_total_cost":
+            algorithm_df[
+                "total_cost"
+            ].std(),
+    }
+
+
+    summary_rows.append(
+        row
+    )
+
+
+summary_df = (
+    pd.DataFrame(
+        summary_rows
+    )
+)
+
+
+print(
+    "\n========================================"
+)
+
+print(
+    "ALGORITHM COST SUMMARY"
+)
+
+print(
+    "========================================"
+)
+
+
+print(
+    summary_df.to_string(
+        index=False
+    )
+)
+
+
+# ============================================================
+# 19. COST PLOT DEFINITIONS
+# ============================================================
 
 COSTS = [
 
-
-
     (
-
         "hitting_cost",
-
         "Hitting Cost",
-
     ),
 
-
-
     (
-
         "long_term_cost",
-
         "Long-Term Cost",
-
     ),
-
-
 
     (
-
         "total_cost",
-
         "Total Cost",
-
     ),
-
-
-
 ]
 
 
-
-
-
+# ============================================================
+# 20. MAIN ALGORITHM BOXPLOTS
 # ============================================================
 
-# 16. ALGORITHM COMPARISON FIGURE
+fig_box, axes_box = (
+    plt.subplots(
 
-# ============================================================
+        1,
 
+        3,
 
-
-fig, axes = plt.subplots(
-
-    1,
-
-    3,
-
-    figsize=(
-
-        15.5,
-
-        4.8,
-
-    ),
-
+        figsize=(
+            15.5,
+            4.8,
+        ),
+    )
 )
 
 
-
-
-
-# ============================================================
-
-# 17. DRAW ALGORITHM BOXPLOTS
-
-# ============================================================
-
-
-
-for ax, (
-
-    cost_column,
-
-    ylabel,
-
+for (
+    ax,
+    (
+        cost_column,
+        ylabel,
+    ),
 ) in zip(
-
-    axes,
-
+    axes_box,
     COSTS,
-
 ):
-
 
 
     box_data = [
 
-
-
-        df[
-
-            df[
-
-                "algorithm"
-
-            ]
-
-            == algorithm
-
+        comparison_frames[
+            algorithm
         ][
-
             cost_column
-
         ]
 
         .dropna()
 
         .to_numpy()
 
-
-
         for algorithm
-
         in PLOT_ORDER
-
-
-
     ]
 
 
-
-
-
-    bp = ax.boxplot(
+    ax.boxplot(
 
         box_data,
-
-
 
         tick_labels=[
 
             ALGORITHM_LABELS[
-
                 algorithm
-
             ]
 
             for algorithm
-
             in PLOT_ORDER
-
         ],
-
-
 
         patch_artist=True,
 
-
-
         showmeans=False,
 
-
-
         widths=0.58,
-
-
-
-        medianprops={
-
-            "linewidth": 1.6,
-
-            "color": "black",
-
-        },
-
-
-
-        whiskerprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        capprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        boxprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        flierprops={
-
-            "marker": "o",
-
-            "markersize": 2.5,
-
-            "markerfacecolor": "none",
-
-            "markeredgecolor": "black",
-
-            "markeredgewidth": 0.6,
-
-        },
-
     )
-
-
-
-
-
-    colors = (
-
-        plt.rcParams[
-
-            "axes.prop_cycle"
-
-        ]
-
-        .by_key()[
-
-            "color"
-
-        ]
-
-    )
-
-
-
-
-
-    for index, box in enumerate(
-
-        bp[
-
-            "boxes"
-
-        ]
-
-    ):
-
-
-
-        box.set_facecolor(
-
-            colors[
-
-                index
-
-                % len(colors)
-
-            ]
-
-        )
-
-
-
-        box.set_alpha(
-
-            0.42
-
-        )
-
-
-
 
 
     ax.set_ylabel(
 
         ylabel,
 
-        fontsize=14,
+        fontsize=13,
 
         fontweight="bold",
-
     )
-
-
-
 
 
     ax.tick_params(
 
         axis="x",
 
-        labelsize=10.5,
-
-        width=1.2,
-
-        length=5,
-
+        labelsize=10,
     )
-
-
-
-
-
-    for label in ax.get_xticklabels():
-
-
-
-        label.set_fontweight(
-
-            "bold"
-
-        )
-
-
-
-        label.set_rotation(
-
-            0
-
-        )
-
-
-
 
 
     ax.tick_params(
@@ -1805,29 +2090,7 @@ for ax, (
         axis="y",
 
         labelsize=10,
-
-        width=1.2,
-
-        length=4,
-
     )
-
-
-
-
-
-    for label in ax.get_yticklabels():
-
-
-
-        label.set_fontweight(
-
-            "bold"
-
-        )
-
-
-
 
 
     ax.grid(
@@ -1839,2235 +2102,177 @@ for ax, (
         linewidth=0.7,
 
         alpha=0.45,
-
     )
-
-
-
 
 
     ax.set_axisbelow(
-
         True
-
     )
 
 
+fig_box.suptitle(
+
+    (
+        "Matrix-Memory Cost Comparison "
+        f"(beta={BETA:g}, "
+        f"m={M:g}, "
+        f"T={WINDOW_SIZE})"
+    ),
+
+    fontsize=14,
+
+    fontweight="bold",
+)
 
 
-
-    for spine in ax.spines.values():
-
-
-
-        spine.set_linewidth(
-
-            1.25
-
-        )
-
-
-
-
-
-# ============================================================
-
-# 18. ALGORITHM PLOT SPACING
-
-# ============================================================
-
-
-
-fig.subplots_adjust(
+fig_box.subplots_adjust(
 
     left=0.065,
 
     right=0.99,
 
-    bottom=0.22,
+    bottom=0.20,
 
-    top=0.97,
+    top=0.86,
 
     wspace=0.28,
-
 )
 
 
-
-
-
-# ============================================================
-
-# 19. ALGORITHM PLOT OUTPUT FILE
-
-# ============================================================
-
-
-
-if SMROO_SUM_MODE == "lambda2_zero":
-
-
-
-    smroo_output_label = (
-
-        "smroo_sum_lambda2_zero"
-
-    )
-
-
-
-else:
-
-
-
-    smroo_output_label = (
-
-        "smroo_sum_selected"
-
-    )
-
-
-
-
-
-ALGORITHM_OUTPUT_FILE = (
+ALGORITHM_BOXPLOT_FILE = (
 
     SETTING_DIR
 
-    / (
-
-        f"boxplot_all_costs"
-
+    /
+    (
+        "matrix_memory_boxplot_selected_configs"
         f"_beta_{BETA:g}"
-
         f"_m_{M:g}"
-
-        f"_T_{WINDOW_SIZE}"
-
-        f"_{smroo_output_label}.png"
-
+        f"_T_{WINDOW_SIZE}.png"
     )
-
 )
 
 
+fig_box.savefig(
 
-
-
-# ============================================================
-
-# 20. SAVE ALGORITHM COMPARISON
-
-# ============================================================
-
-
-
-fig.savefig(
-
-    ALGORITHM_OUTPUT_FILE,
+    ALGORITHM_BOXPLOT_FILE,
 
     dpi=300,
 
     bbox_inches="tight",
-
 )
-
-
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "ALGORITHM COMPARISON PLOT SAVED"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-print(
-
-    ALGORITHM_OUTPUT_FILE
-
-)
-
-
-
 
 
 # ============================================================
-
-# 21. LOAD ALL RAW MROO TUNING RESULTS
-
+# 21. MAIN ALGORITHM VIOLIN PLOTS
 # ============================================================
 
+fig_violin, axes_violin = (
+    plt.subplots(
 
+        1,
 
-mroo_df = pd.read_csv(
+        3,
 
-    MROO_RESULT_FILE
-
-)
-
-
-
-
-
-required_mroo_columns = {
-
-
-
-    "window_id",
-
-
-
-    "lambda_1",
-
-
-
-    "eta",
-
-
-
-    "kappa_init",
-
-
-
-    "hitting_cost",
-
-
-
-    "long_term_cost",
-
-
-
-    "total_cost",
-
-
-
-}
-
-
-
-
-
-missing = (
-
-    required_mroo_columns
-
-    - set(
-
-        mroo_df.columns
-
-    )
-
-)
-
-
-
-
-
-if missing:
-
-
-
-    raise RuntimeError(
-
-        "MROO result file is missing columns: "
-
-        f"{sorted(missing)}"
-
-    )
-
-
-
-
-
-# ============================================================
-
-# 22. AVAILABLE MROO PARAMETERS
-
-# ============================================================
-
-
-
-lambda_values = sorted(
-
-    mroo_df[
-
-        "lambda_1"
-
-    ]
-
-    .dropna()
-
-    .astype(float)
-
-    .unique()
-
-)
-
-
-
-
-
-eta_values = sorted(
-
-    mroo_df[
-
-        "eta"
-
-    ]
-
-    .dropna()
-
-    .astype(float)
-
-    .unique()
-
-)
-
-
-
-
-
-# ============================================================
-
-# IMPORTANT CHANGE:
-
-#
-
-# kappa_init is now allowed to be an array-like string:
-
-#
-
-#     [1.2,0.8,0.6]
-
-#
-
-# Therefore it must NOT be converted to float.
-
-# ============================================================
-
-
-
-kappa_values = sorted(
-
-    mroo_df[
-
-        "kappa_init"
-
-    ]
-
-    .dropna()
-
-    .astype(str)
-
-    .unique()
-
-)
-
-
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "MROO TUNING VALUES"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-
-
-print(
-
-    "lambda_1 values =",
-
-    lambda_values,
-
-)
-
-
-
-
-
-print(
-
-    "eta values =",
-
-    eta_values,
-
-)
-
-
-
-
-
-print(
-
-    "kappa_init values =",
-
-    kappa_values,
-
-)
-
-
-
-
-
-# ============================================================
-
-# 23. BUILD UNIQUE MROO CONFIGURATIONS
-
-# ============================================================
-
-
-
-configurations = (
-
-    mroo_df[
-
-        [
-
-            "lambda_1",
-
-            "eta",
-
-            "kappa_init",
-
-        ]
-
-    ]
-
-
-
-    .drop_duplicates()
-
-
-
-    .sort_values(
-
-        [
-
-            "lambda_1",
-
-            "eta",
-
-            "kappa_init",
-
-        ]
-
-    )
-
-
-
-    .reset_index(
-
-        drop=True
-
-    )
-
-)
-
-
-
-
-
-print(
-
-    "\nNumber of MROO configurations =",
-
-    len(configurations),
-
-)
-
-
-
-
-
-# ============================================================
-
-# 24. CHECK EACH CONFIGURATION HAS 100 WINDOWS
-
-# ============================================================
-
-
-
-for _, config in configurations.iterrows():
-
-
-
-    lambda_1 = float(
-
-        config[
-
-            "lambda_1"
-
-        ]
-
-    )
-
-
-
-
-
-    eta = float(
-
-        config[
-
-            "eta"
-
-        ]
-
-    )
-
-
-
-
-
-    # --------------------------------------------------------
-
-    # IMPORTANT CHANGE:
-
-    #
-
-    # kappa_init is now a string representation of a vector.
-
-    # --------------------------------------------------------
-
-
-
-    kappa = str(
-
-        config[
-
-            "kappa_init"
-
-        ]
-
-    )
-
-
-
-
-
-    mask = (
-
-
-
-        np.isclose(
-
-            mroo_df[
-
-                "lambda_1"
-
-            ].astype(float),
-
-
-
-            lambda_1,
-
-        )
-
-
-
-        &
-
-
-
-        np.isclose(
-
-            mroo_df[
-
-                "eta"
-
-            ].astype(float),
-
-
-
-            eta,
-
-        )
-
-
-
-        &
-
-
-
-        (
-
-            mroo_df[
-
-                "kappa_init"
-
-            ].astype(str)
-
-
-
-            == kappa
-
-        )
-
-
-
-    )
-
-
-
-
-
-    count = int(
-
-        mask.sum()
-
-    )
-
-
-
-
-
-    print(
-
-        f"lambda_1={lambda_1:.6g}, "
-
-        f"eta={eta:.6g}, "
-
-        f"kappa={kappa}: "
-
-        f"{count} windows"
-
-    )
-
-
-
-
-
-    if count != N_WINDOWS:
-
-
-
-        print(
-
-            "WARNING: expected "
-
-            f"{N_WINDOWS} windows."
-
-        )
-
-
-
-
-
-# ============================================================
-
-# 25. MROO TUNING SUMMARY
-
-# ============================================================
-
-
-
-mroo_summary = (
-
-    mroo_df
-
-
-
-    .groupby(
-
-        [
-
-            "lambda_1",
-
-            "eta",
-
-            "kappa_init",
-
-        ],
-
-        as_index=False,
-
-    )
-
-
-
-    .agg(
-
-
-
-        n_windows=(
-
-            "window_id",
-
-            "count",
-
+        figsize=(
+            15.5,
+            4.8,
         ),
-
-
-
-        mean_hitting_cost=(
-
-            "hitting_cost",
-
-            "mean",
-
-        ),
-
-
-
-        std_hitting_cost=(
-
-            "hitting_cost",
-
-            "std",
-
-        ),
-
-
-
-        mean_long_term_cost=(
-
-            "long_term_cost",
-
-            "mean",
-
-        ),
-
-
-
-        std_long_term_cost=(
-
-            "long_term_cost",
-
-            "std",
-
-        ),
-
-
-
-        mean_total_cost=(
-
-            "total_cost",
-
-            "mean",
-
-        ),
-
-
-
-        std_total_cost=(
-
-            "total_cost",
-
-            "std",
-
-        ),
-
-
-
     )
-
-
-
-    .sort_values(
-
-        "mean_total_cost"
-
-    )
-
-
-
-    .reset_index(
-
-        drop=True
-
-    )
-
 )
 
 
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "MROO TUNING SUMMARY"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-
-
-print(
-
-    mroo_summary.to_string(
-
-        index=False
-
-    )
-
-)
-
-
-
-
-
-# ============================================================
-
-# 26. PRINT BEST MROO CONFIGURATION
-
-# ============================================================
-
-
-
-best_mroo = (
-
-    mroo_summary
-
-    .iloc[0]
-
-)
-
-
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "BEST MROO CONFIGURATION"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-
-
-print(
-
-    "lambda_1 =",
-
-    best_mroo[
-
-        "lambda_1"
-
-    ],
-
-)
-
-
-
-
-
-print(
-
-    "eta =",
-
-    best_mroo[
-
-        "eta"
-
-    ],
-
-)
-
-
-
-
-
-print(
-
-    "kappa_init =",
-
-    best_mroo[
-
-        "kappa_init"
-
-    ],
-
-)
-
-
-
-
-
-print(
-
-    "mean hitting cost =",
-
-    best_mroo[
-
-        "mean_hitting_cost"
-
-    ],
-
-)
-
-
-
-
-
-print(
-
-    "mean long-term cost =",
-
-    best_mroo[
-
-        "mean_long_term_cost"
-
-    ],
-
-)
-
-
-
-
-
-print(
-
-    "mean total cost =",
-
-    best_mroo[
-
-        "mean_total_cost"
-
-    ],
-
-)
-
-
-
-
-
-# ============================================================
-
-# COMPARE CURRENT-RUN CONFIGURATIONS WITH BEST PREVIOUS CONFIG
-
-# ============================================================
-
-
-
-def kappa_components(value):
-
-    """Convert scalar/vector kappa labels to numeric vectors."""
-
-    import ast
-
-
-
-    parsed = ast.literal_eval(str(value))
-
-    return np.asarray(
-
-        parsed,
-
-        dtype=float,
-
-    ).reshape(-1)
-
-
-
-
-
-def same_kappa_values(
-
-    value_a,
-
-    value_b,
-
+for (
+    ax,
+    (
+        cost_column,
+        ylabel,
+    ),
+) in zip(
+    axes_violin,
+    COSTS,
 ):
 
-    a = kappa_components(
 
-        value_a
+    violin_data = [
 
-    )
-
-
-
-    b = kappa_components(
-
-        value_b
-
-    )
-
-
-
-    # Scalar kappa means the same initial value in every dimension.
-
-    if a.size == 1 and b.size > 1:
-
-        a = np.full(
-
-            b.size,
-
-            a[0],
-
-        )
-
-
-
-    elif b.size == 1 and a.size > 1:
-
-        b = np.full(
-
-            a.size,
-
-            b[0],
-
-        )
-
-
-
-    return (
-
-        a.shape == b.shape
-
-        and
-
-        bool(
-
-            np.allclose(
-
-                a,
-
-                b,
-
-                rtol=1e-9,
-
-                atol=1e-12,
-
-            )
-
-        )
-
-    )
-
-
-
-
-
-def configuration_mask(
-
-    frame,
-
-    config,
-
-):
-
-    return (
-
-        np.isclose(
-
-            frame[
-
-                "lambda_1"
-
-            ].astype(float),
-
-            float(
-
-                config[
-
-                    "lambda_1"
-
-                ]
-
-            ),
-
-            rtol=1e-9,
-
-            atol=1e-12,
-
-        )
-
-        &
-
-        np.isclose(
-
-            frame[
-
-                "eta"
-
-            ].astype(float),
-
-            float(
-
-                config[
-
-                    "eta"
-
-                ]
-
-            ),
-
-            rtol=1e-9,
-
-            atol=1e-12,
-
-        )
-
-        &
-
-        frame[
-
-            "kappa_init"
-
-        ].map(
-
-            lambda value:
-
-                same_kappa_values(
-
-                    value,
-
-                    config[
-
-                        "kappa_init"
-
-                    ],
-
-                )
-
-        )
-
-    )
-
-
-
-
-
-# ------------------------------------------------------------
-
-# Read configurations requested in the latest MROO run.
-
-# ------------------------------------------------------------
-
-
-
-current_run_configs = pd.read_csv(
-
-    MROO_CURRENT_RUN_CONFIG_FILE,
-
-    low_memory=False,
-
-)
-
-
-
-required_current_config_columns = {
-
-    "lambda_1",
-
-    "eta",
-
-    "kappa_init",
-
-}
-
-
-
-missing_current_columns = (
-
-    required_current_config_columns
-
-    - set(
-
-        current_run_configs.columns
-
-    )
-
-)
-
-
-
-if missing_current_columns:
-
-
-
-    raise RuntimeError(
-
-        "Current-run MROO configuration file is missing columns: "
-
-        f"{sorted(missing_current_columns)}"
-
-    )
-
-
-
-
-
-if len(current_run_configs) == 0:
-
-
-
-    raise RuntimeError(
-
-        "Current-run MROO configuration file is empty."
-
-    )
-
-
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "CURRENT MROO RUN CONFIGURATIONS"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-print(
-
-    current_run_configs.to_string(
-
-        index=False
-
-    )
-
-)
-
-
-
-
-
-# ------------------------------------------------------------
-
-# Match every current-run configuration to its saved summary.
-
-# ------------------------------------------------------------
-
-
-
-current_summary_rows = []
-
-
-
-for _, requested_config in current_run_configs.iterrows():
-
-
-
-    matches = mroo_summary[
-
-        configuration_mask(
-
-            mroo_summary,
-
-            requested_config,
-
-        )
-
-    ]
-
-
-
-    if len(matches) == 0:
-
-
-
-        raise RuntimeError(
-
-            "\nA configuration from mroo_current_run_configs.csv "
-
-            "has no saved MROO summary result:\n"
-
-            f"{requested_config.to_dict()}"
-
-        )
-
-
-
-
-
-    if len(matches) > 1:
-
-
-
-        raise RuntimeError(
-
-            "\nA current-run configuration matched multiple "
-
-            "MROO summary rows:\n"
-
-            f"{requested_config.to_dict()}"
-
-        )
-
-
-
-
-
-    matched_row = matches.iloc[0]
-
-
-
-    if int(
-
-        matched_row[
-
-            "n_windows"
-
+        comparison_frames[
+            algorithm
+        ][
+            cost_column
         ]
 
-    ) != N_WINDOWS:
-
-
-
-        raise RuntimeError(
-
-            "\nCurrent-run MROO configuration is incomplete:\n"
-
-            f"{requested_config.to_dict()}\n"
-
-            f"Found {int(matched_row['n_windows'])} windows "
-
-            f"instead of {N_WINDOWS}."
-
-        )
-
-
-
-
-
-    current_summary_rows.append(
-
-        matched_row
-
-    )
-
-
-
-
-
-current_configs = pd.DataFrame(
-
-    current_summary_rows
-
-).reset_index(
-
-    drop=True
-
-)
-
-
-
-
-
-# ------------------------------------------------------------
-
-# Find configurations that were NOT requested in this run.
-
-# Since mroo_summary is sorted by mean_total_cost, the first
-
-# remaining row is the best previous saved configuration.
-
-# ------------------------------------------------------------
-
-
-
-is_current_run = np.zeros(
-
-    len(mroo_summary),
-
-    dtype=bool,
-
-)
-
-
-
-for _, config in current_configs.iterrows():
-
-
-
-    is_current_run |= (
-
-        configuration_mask(
-
-            mroo_summary,
-
-            config,
-
-        )
+        .dropna()
 
         .to_numpy()
 
-    )
-
-
-
-
-
-previous_configs = (
-
-    mroo_summary[
-
-        ~is_current_run
-
-    ]
-
-    .copy()
-
-    .sort_values(
-
-        "mean_total_cost"
-
-    )
-
-    .reset_index(
-
-        drop=True
-
-    )
-
-)
-
-
-
-
-
-# ------------------------------------------------------------
-
-# Plot:
-
-#   best previous saved configuration
-
-#   + every configuration from the latest MROO run
-
-# ------------------------------------------------------------
-
-
-
-if len(previous_configs) > 0:
-
-
-
-    best_previous = (
-
-        previous_configs
-
-        .iloc[[0]]
-
-        .copy()
-
-    )
-
-
-
-    configurations = pd.concat(
-
-        [
-
-            best_previous,
-
-            current_configs,
-
-        ],
-
-        ignore_index=True,
-
-    )
-
-
-
-    comparison_roles = [
-
-        "Best previous"
-
-    ] + [
-
-        f"Current run {i + 1}"
-
-        for i in range(
-
-            len(current_configs)
-
-        )
-
+        for algorithm
+        in PLOT_ORDER
     ]
 
 
+    positions = np.arange(
 
-else:
+        1,
 
-
-
-    configurations = (
-
-        current_configs.copy()
-
+        len(
+            PLOT_ORDER
+        )
+        + 1,
     )
 
 
+    ax.violinplot(
 
-    comparison_roles = [
+        violin_data,
 
-        f"Current run {i + 1}"
+        positions=positions,
 
-        for i in range(
-
-            len(current_configs)
-
-        )
-
-    ]
-
-
-
-
-
-# ------------------------------------------------------------
-
-# Verify all compared configurations are complete and use
-
-# exactly the same windows.
-
-# ------------------------------------------------------------
-
-
-
-reference_windows = None
-
-
-
-for _, config in configurations.iterrows():
-
-
-
-    selected = mroo_df[
-
-        configuration_mask(
-
-            mroo_df,
-
-            config,
-
-        )
-
-    ]
-
-
-
-    window_columns = [
-
-        column
-
-        for column
-
-        in required_window_columns
-
-        if column in selected.columns
-
-    ]
-
-
-
-    windows = (
-
-        selected[
-
-            window_columns
-
-        ]
-
-        .sort_values(
-
-            "window_id"
-
-        )
-
-        .reset_index(
-
-            drop=True
-
-        )
-
-    )
-
-
-
-    if (
-
-        selected[
-
-            "window_id"
-
-        ].duplicated().any()
-
-        or
-
-        len(selected) != N_WINDOWS
-
-    ):
-
-
-
-        raise RuntimeError(
-
-            "MROO comparison requires one result per window "
-
-            "and all expected windows."
-
-        )
-
-
-
-
-
-    if (
-
-        reference_windows is not None
-
-        and
-
-        not windows.equals(
-
-            reference_windows
-
-        )
-
-    ):
-
-
-
-        raise RuntimeError(
-
-            "Compared MROO configurations did not use "
-
-            "the same windows."
-
-        )
-
-
-
-
-
-    reference_windows = windows
-
-
-
-
-
-print(
-
-    "\n========================================"
-
-)
-
-
-
-print(
-
-    "MROO CONFIGURATIONS BEING COMPARED"
-
-)
-
-
-
-print(
-
-    "========================================"
-
-)
-
-
-
-print(
-
-    configurations.to_string(
-
-        index=False
-
-    )
-
-)
-
-
-
-
-
-# ============================================================
-
-# 27. LABEL EACH TUNING CONFIGURATION
-
-# ============================================================
-
-
-
-def tuning_label(
-
-    lambda_1,
-
-    eta,
-
-    kappa,
-
-):
-
-
-
-    return (
-
-        rf"$\lambda_1$={lambda_1:.3g}"
-
-        "\n"
-
-        rf"$\eta$={eta:.3g}"
-
-        "\n"
-
-        rf"$\kappa$={kappa}"
-
-    )
-
-
-
-
-
-config_labels = []
-
-
-
-
-
-for role, (_, config) in zip(comparison_roles, configurations.iterrows()):
-
-
-
-    config_labels.append(
-
-
-
-        role + "\n" + tuning_label(
-
-
-
-            float(
-
-                config[
-
-                    "lambda_1"
-
-                ]
-
-            ),
-
-
-
-            float(
-
-                config[
-
-                    "eta"
-
-                ]
-
-            ),
-
-
-
-            str(
-
-                config[
-
-                    "kappa_init"
-
-                ]
-
-            ),
-
-
-
-        )
-
-
-
-    )
-
-
-
-
-
-# ============================================================
-
-# 28. MROO COSTS
-
-# ============================================================
-
-
-
-MROO_COSTS = [
-
-
-
-    (
-
-        "hitting_cost",
-
-        "Hitting Cost",
-
-    ),
-
-
-
-    (
-
-        "long_term_cost",
-
-        "Long-Term Cost",
-
-    ),
-
-
-
-    (
-
-        "total_cost",
-
-        "Total Cost",
-
-    ),
-
-
-
-]
-
-
-
-
-
-# ============================================================
-
-# 29. MROO TUNING FIGURE
-
-# ============================================================
-
-
-
-figure_width = max(
-
-    15.5,
-
-    1.4
-
-    * len(
-
-        configurations
-
-    ),
-
-)
-
-
-
-
-
-fig_tune, axes_tune = plt.subplots(
-
-    1,
-
-    3,
-
-    figsize=(
-
-        figure_width,
-
-        6.0,
-
-    ),
-
-)
-
-
-
-
-
-# ============================================================
-
-# 30. DRAW THE MROO CONFIGURATION COMPARISON
-
-# ============================================================
-
-
-
-for ax, (
-
-    cost_column,
-
-    ylabel,
-
-) in zip(
-
-    axes_tune,
-
-    MROO_COSTS,
-
-):
-
-
-
-    box_data = []
-
-
-
-
-
-    for _, config in configurations.iterrows():
-
-
-
-        lambda_1 = float(
-
-            config[
-
-                "lambda_1"
-
-            ]
-
-        )
-
-
-
-
-
-        eta = float(
-
-            config[
-
-                "eta"
-
-            ]
-
-        )
-
-
-
-
-
-        mask = configuration_mask(
-
-            mroo_df,
-
-            config,
-
-        )
-
-
-
-
-
-        config_data = (
-
-            mroo_df[
-
-                mask
-
-            ][
-
-                cost_column
-
-            ]
-
-
-
-            .dropna()
-
-
-
-            .to_numpy()
-
-        )
-
-
-
-
-
-        box_data.append(
-
-            config_data
-
-        )
-
-
-
-
-
-    bp = ax.boxplot(
-
-
-
-        box_data,
-
-
-
-        tick_labels=config_labels,
-
-
-
-        patch_artist=True,
-
-
+        widths=0.75,
 
         showmeans=False,
 
+        showmedians=True,
 
-
-        widths=0.58,
-
-
-
-        medianprops={
-
-            "linewidth": 1.6,
-
-            "color": "black",
-
-        },
-
-
-
-        whiskerprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        capprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        boxprops={
-
-            "linewidth": 1.1,
-
-            "color": "black",
-
-        },
-
-
-
-        flierprops={
-
-            "marker": "o",
-
-            "markersize": 2.5,
-
-            "markerfacecolor": "none",
-
-            "markeredgecolor": "black",
-
-            "markeredgewidth": 0.6,
-
-        },
-
-
-
+        showextrema=True,
     )
 
 
-
-
-
-    colors = (
-
-        plt.rcParams[
-
-            "axes.prop_cycle"
-
-        ]
-
-        .by_key()[
-
-            "color"
-
-        ]
-
+    ax.set_xticks(
+        positions
     )
 
 
+    ax.set_xticklabels(
 
+        [
 
-
-    for index, box in enumerate(
-
-        bp[
-
-            "boxes"
-
-        ]
-
-    ):
-
-
-
-        box.set_facecolor(
-
-            colors[
-
-                index
-
-                % len(colors)
-
+            ALGORITHM_LABELS[
+                algorithm
             ]
 
-        )
-
-
-
-
-
-        box.set_alpha(
-
-            0.42
-
-        )
-
-
-
+            for algorithm
+            in PLOT_ORDER
+        ]
+    )
 
 
     ax.set_ylabel(
 
         ylabel,
 
-        fontsize=14,
+        fontsize=13,
 
         fontweight="bold",
-
     )
-
-
-
 
 
     ax.tick_params(
 
         axis="x",
 
-        labelsize=8,
-
-        width=1.2,
-
-        length=5,
-
+        labelsize=10,
     )
-
-
-
-
-
-    for label in ax.get_xticklabels():
-
-
-
-        label.set_rotation(
-
-            45
-
-        )
-
-
-
-        label.set_ha(
-
-            "right"
-
-        )
-
-
-
 
 
     ax.tick_params(
@@ -4075,29 +2280,7 @@ for ax, (
         axis="y",
 
         labelsize=10,
-
-        width=1.2,
-
-        length=4,
-
     )
-
-
-
-
-
-    for label in ax.get_yticklabels():
-
-
-
-        label.set_fontweight(
-
-            "bold"
-
-        )
-
-
-
 
 
     ax.grid(
@@ -4109,173 +2292,1057 @@ for ax, (
         linewidth=0.7,
 
         alpha=0.45,
-
     )
-
-
-
 
 
     ax.set_axisbelow(
-
         True
-
     )
 
 
-
-
-
-    for spine in ax.spines.values():
-
-
-
-        spine.set_linewidth(
-
-            1.25
-
-        )
-
-
-
-
-
-# ============================================================
-
-# 31. MROO TUNING FIGURE TITLE / SPACING
-
-# ============================================================
-
-
-
-fig_tune.suptitle(
+fig_violin.suptitle(
 
     (
-
-        "MROO Hyperparameter Tuning "
-
-        f"(current run vs. best previous configuration; "
-
-        f"beta={BETA:g}, "
-
+        "Matrix-Memory Cost Distribution "
+        f"(beta={BETA:g}, "
         f"m={M:g}, "
-
         f"T={WINDOW_SIZE})"
-
     ),
 
-    fontsize=15,
+    fontsize=14,
 
     fontweight="bold",
-
 )
 
 
+fig_violin.subplots_adjust(
 
-
-
-fig_tune.subplots_adjust(
-
-    left=0.06,
+    left=0.065,
 
     right=0.99,
 
-    bottom=0.36,
+    bottom=0.20,
 
-    top=0.88,
+    top=0.86,
 
     wspace=0.28,
-
 )
 
 
-
-
-
-# ============================================================
-
-# 32. SAVE MROO TUNING PLOT
-
-# ============================================================
-
-
-
-MROO_TUNING_OUTPUT_FILE = (
+ALGORITHM_VIOLIN_FILE = (
 
     SETTING_DIR
 
-    / (
-
-        f"mroo_tuning_current_run_vs_best_eta_kappa"
-
+    /
+    (
+        "matrix_memory_violin_selected_configs"
         f"_beta_{BETA:g}"
-
         f"_m_{M:g}"
-
         f"_T_{WINDOW_SIZE}.png"
-
     )
-
 )
 
 
+fig_violin.savefig(
 
-
-
-fig_tune.savefig(
-
-    MROO_TUNING_OUTPUT_FILE,
+    ALGORITHM_VIOLIN_FILE,
 
     dpi=300,
 
     bbox_inches="tight",
-
 )
 
 
+# ============================================================
+# 22. SAVE SELECTED DATA
+#
+# This is useful because it records exactly which 600 rows
+# generated the current plot.
+# ============================================================
+
+SELECTED_RESULT_FILE = (
+
+    SETTING_DIR
+
+    /
+    "plot_selected_algorithm_window_results.csv"
+)
 
 
+SELECTED_SUMMARY_FILE = (
+
+    SETTING_DIR
+
+    /
+    "plot_selected_algorithm_summary.csv"
+)
+
+
+comparison_df.to_csv(
+
+    SELECTED_RESULT_FILE,
+
+    index=False,
+)
+
+
+summary_df.to_csv(
+
+    SELECTED_SUMMARY_FILE,
+
+    index=False,
+)
+
+
+# ============================================================
+# 23. MROO TUNING DATA
+#
+# For the tuning plot we deliberately use ALL stored MROO
+# configurations, not only the one selected above.
+# ============================================================
+
+all_mroo_df = (
+
+    all_results_df[
+        all_results_df[
+            "algorithm"
+        ]
+        ==
+        "MROO"
+    ]
+
+    .copy()
+)
+
+
+# ------------------------------------------------------------
+# Fallback to raw MROO storage if history does not contain
+# all configs.
+# ------------------------------------------------------------
+
+if (
+    len(
+        all_mroo_df
+    ) == 0
+    and
+    MROO_RESULT_FILE.exists()
+):
+
+    all_mroo_df = (
+        pd.read_csv(
+            MROO_RESULT_FILE,
+            low_memory=False,
+        )
+    )
+
+
+# ============================================================
+# 24. BUILD MROO CONFIGURATION IDS IF NEEDED
+# ============================================================
+
+def build_mroo_config_key(
+    row,
+    kappa_columns,
+):
+
+    values = []
+
+
+    # --------------------------------------------------------
+    # lambda_1
+    # --------------------------------------------------------
+
+    if (
+        "lambda_1"
+        in row.index
+        and
+        not pd.isna(
+            row[
+                "lambda_1"
+            ]
+        )
+    ):
+
+        values.append(
+            (
+                "lambda_1",
+                float(
+                    row[
+                        "lambda_1"
+                    ]
+                ),
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # lambda_2 if present
+    # --------------------------------------------------------
+
+    if (
+        "lambda_2"
+        in row.index
+        and
+        not pd.isna(
+            row[
+                "lambda_2"
+            ]
+        )
+    ):
+
+        values.append(
+            (
+                "lambda_2",
+                float(
+                    row[
+                        "lambda_2"
+                    ]
+                ),
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # eta
+    # --------------------------------------------------------
+
+    if (
+        "eta"
+        in row.index
+        and
+        not pd.isna(
+            row[
+                "eta"
+            ]
+        )
+    ):
+
+        values.append(
+            (
+                "eta",
+                float(
+                    row[
+                        "eta"
+                    ]
+                ),
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # kappa
+    # --------------------------------------------------------
+
+    if len(
+        kappa_columns
+    ) > 0:
+
+        for column in kappa_columns:
+
+            values.append(
+                (
+                    column,
+                    float(
+                        row[
+                            column
+                        ]
+                    ),
+                )
+            )
+
+
+    elif (
+        "kappa_init"
+        in row.index
+        and
+        not pd.isna(
+            row[
+                "kappa_init"
+            ]
+        )
+    ):
+
+        kappa_values = (
+            parse_kappa(
+                row[
+                    "kappa_init"
+                ]
+            )
+        )
+
+
+        for (
+            index,
+            value,
+        ) in enumerate(
+            kappa_values
+        ):
+
+            values.append(
+                (
+                    f"kappa_init_{index}",
+                    float(
+                        value
+                    ),
+                )
+            )
+
+
+    return tuple(
+        values
+    )
+
+
+if len(
+    all_mroo_df
+) > 0:
+
+    MROO_KAPPA_COLUMNS = (
+        get_kappa_columns(
+            all_mroo_df
+        )
+    )
+
+
+    all_mroo_df[
+        "_configuration_key"
+    ] = [
+
+        build_mroo_config_key(
+
+            row,
+
+            MROO_KAPPA_COLUMNS,
+        )
+
+        for _, row
+        in all_mroo_df.iterrows()
+    ]
+
+
+    # ========================================================
+    # 25. MROO CONFIGURATION SUMMARY
+    # ========================================================
+
+    mroo_config_summary = (
+
+        all_mroo_df
+
+        .groupby(
+            "_configuration_key",
+            as_index=False,
+            dropna=False,
+        )
+
+        .agg(
+
+            n_windows=(
+                "window_id",
+                "nunique",
+            ),
+
+            mean_hitting_cost=(
+                "hitting_cost",
+                "mean",
+            ),
+
+            mean_long_term_cost=(
+                "long_term_cost",
+                "mean",
+            ),
+
+            mean_total_cost=(
+                "total_cost",
+                "mean",
+            ),
+        )
+
+        .sort_values(
+            "mean_total_cost"
+        )
+
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    complete_mroo_configs = (
+
+        mroo_config_summary[
+            mroo_config_summary[
+                "n_windows"
+            ]
+            ==
+            N_WINDOWS
+        ]
+
+        .copy()
+
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "ALL COMPLETE MROO CONFIGURATIONS"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+    if len(
+        complete_mroo_configs
+    ) == 0:
+
+        print(
+            "No complete MROO configurations."
+        )
+
+
+    else:
+
+        print(
+            complete_mroo_configs[
+                [
+                    "n_windows",
+                    "mean_hitting_cost",
+                    "mean_long_term_cost",
+                    "mean_total_cost",
+                ]
+            ]
+            .to_string(
+                index=False
+            )
+        )
+
+
+        # ====================================================
+        # 26. LABEL MROO CONFIGURATIONS
+        # ====================================================
+
+        mroo_plot_data = []
+
+        mroo_labels = []
+
+
+        for (
+            config_index,
+            config_row,
+        ) in (
+            complete_mroo_configs
+            .iterrows()
+        ):
+
+            key = (
+                config_row[
+                    "_configuration_key"
+                ]
+            )
+
+
+            config_df = (
+
+                all_mroo_df[
+                    all_mroo_df[
+                        "_configuration_key"
+                    ]
+                    ==
+                    key
+                ]
+
+                .copy()
+
+                .drop_duplicates(
+
+                    subset=[
+                        "window_id",
+                    ],
+
+                    keep="last",
+                )
+
+                .sort_values(
+                    "window_id"
+                )
+
+                .reset_index(
+                    drop=True
+                )
+            )
+
+
+            if len(
+                config_df
+            ) != N_WINDOWS:
+
+                continue
+
+
+            first_row = (
+                config_df.iloc[
+                    0
+                ]
+            )
+
+
+            label_parts = []
+
+
+            if (
+                "lambda_1"
+                in first_row.index
+                and
+                not pd.isna(
+                    first_row[
+                        "lambda_1"
+                    ]
+                )
+            ):
+
+                label_parts.append(
+                    rf"$\lambda_1$="
+                    +
+                    f"{float(first_row['lambda_1']):.3g}"
+                )
+
+
+            if (
+                "eta"
+                in first_row.index
+                and
+                not pd.isna(
+                    first_row[
+                        "eta"
+                    ]
+                )
+            ):
+
+                label_parts.append(
+                    rf"$\eta$="
+                    +
+                    f"{float(first_row['eta']):.3g}"
+                )
+
+
+            if len(
+                MROO_KAPPA_COLUMNS
+            ) > 0:
+
+                kappa_values = np.asarray(
+
+                    [
+
+                        float(
+                            first_row[
+                                column
+                            ]
+                        )
+
+                        for column
+                        in MROO_KAPPA_COLUMNS
+                    ],
+
+                    dtype=float,
+                )
+
+
+            elif (
+                "kappa_init"
+                in first_row.index
+            ):
+
+                kappa_values = (
+                    parse_kappa(
+                        first_row[
+                            "kappa_init"
+                        ]
+                    )
+                )
+
+
+            else:
+
+                kappa_values = (
+                    np.asarray(
+                        [],
+                        dtype=float,
+                    )
+                )
+
+
+            if len(
+                kappa_values
+            ) > 0:
+
+                label_parts.append(
+                    rf"$\kappa$="
+                    +
+                    kappa_string(
+                        kappa_values
+                    )
+                )
+
+
+            if len(
+                label_parts
+            ) == 0:
+
+                label = (
+                    f"Config {config_index + 1}"
+                )
+
+            else:
+
+                label = (
+                    "\n".join(
+                        label_parts
+                    )
+                )
+
+
+            mroo_labels.append(
+                label
+            )
+
+
+            mroo_plot_data.append(
+                config_df
+            )
+
+
+        # ====================================================
+        # 27. MROO TUNING BOXPLOTS
+        # ====================================================
+
+        if len(
+            mroo_plot_data
+        ) > 0:
+
+            figure_width = max(
+
+                15.5,
+
+                2.2
+                *
+                len(
+                    mroo_plot_data
+                ),
+            )
+
+
+            fig_mroo_box, axes_mroo_box = (
+                plt.subplots(
+
+                    1,
+
+                    3,
+
+                    figsize=(
+                        figure_width,
+                        6.0,
+                    ),
+                )
+            )
+
+
+            for (
+                ax,
+                (
+                    cost_column,
+                    ylabel,
+                ),
+            ) in zip(
+                axes_mroo_box,
+                COSTS,
+            ):
+
+                data = [
+
+                    config_df[
+                        cost_column
+                    ]
+
+                    .dropna()
+
+                    .to_numpy()
+
+                    for config_df
+                    in mroo_plot_data
+                ]
+
+
+                ax.boxplot(
+
+                    data,
+
+                    tick_labels=
+                        mroo_labels,
+
+                    patch_artist=True,
+
+                    showmeans=False,
+
+                    widths=0.58,
+                )
+
+
+                ax.set_ylabel(
+
+                    ylabel,
+
+                    fontsize=13,
+
+                    fontweight="bold",
+                )
+
+
+                ax.grid(
+
+                    axis="y",
+
+                    linestyle="--",
+
+                    linewidth=0.7,
+
+                    alpha=0.45,
+                )
+
+
+                ax.set_axisbelow(
+                    True
+                )
+
+
+                for label in (
+                    ax.get_xticklabels()
+                ):
+
+                    label.set_rotation(
+                        45
+                    )
+
+                    label.set_ha(
+                        "right"
+                    )
+
+
+            fig_mroo_box.suptitle(
+
+                (
+                    "MROO Matrix-Memory "
+                    "Hyperparameter Comparison "
+                    f"(beta={BETA:g}, "
+                    f"m={M:g}, "
+                    f"T={WINDOW_SIZE})"
+                ),
+
+                fontsize=14,
+
+                fontweight="bold",
+            )
+
+
+            fig_mroo_box.subplots_adjust(
+
+                left=0.06,
+
+                right=0.99,
+
+                bottom=0.39,
+
+                top=0.88,
+
+                wspace=0.28,
+            )
+
+
+            MROO_BOXPLOT_FILE = (
+
+                SETTING_DIR
+
+                /
+                (
+                    "mroo_matrix_memory_tuning"
+                    f"_beta_{BETA:g}"
+                    f"_m_{M:g}"
+                    f"_T_{WINDOW_SIZE}.png"
+                )
+            )
+
+
+            fig_mroo_box.savefig(
+
+                MROO_BOXPLOT_FILE,
+
+                dpi=300,
+
+                bbox_inches="tight",
+            )
+
+
+            # =================================================
+            # 28. MROO TUNING VIOLIN PLOTS
+            # =================================================
+
+            fig_mroo_violin, axes_mroo_violin = (
+                plt.subplots(
+
+                    1,
+
+                    3,
+
+                    figsize=(
+                        figure_width,
+                        6.0,
+                    ),
+                )
+            )
+
+
+            for (
+                ax,
+                (
+                    cost_column,
+                    ylabel,
+                ),
+            ) in zip(
+                axes_mroo_violin,
+                COSTS,
+            ):
+
+                data = [
+
+                    config_df[
+                        cost_column
+                    ]
+
+                    .dropna()
+
+                    .to_numpy()
+
+                    for config_df
+                    in mroo_plot_data
+                ]
+
+
+                positions = np.arange(
+
+                    1,
+
+                    len(
+                        data
+                    )
+                    + 1,
+                )
+
+
+                ax.violinplot(
+
+                    data,
+
+                    positions=positions,
+
+                    widths=0.75,
+
+                    showmeans=False,
+
+                    showmedians=True,
+
+                    showextrema=True,
+                )
+
+
+                ax.set_xticks(
+                    positions
+                )
+
+
+                ax.set_xticklabels(
+                    mroo_labels
+                )
+
+
+                ax.set_ylabel(
+
+                    ylabel,
+
+                    fontsize=13,
+
+                    fontweight="bold",
+                )
+
+
+                ax.grid(
+
+                    axis="y",
+
+                    linestyle="--",
+
+                    linewidth=0.7,
+
+                    alpha=0.45,
+                )
+
+
+                ax.set_axisbelow(
+                    True
+                )
+
+
+                for label in (
+                    ax.get_xticklabels()
+                ):
+
+                    label.set_rotation(
+                        45
+                    )
+
+                    label.set_ha(
+                        "right"
+                    )
+
+
+            fig_mroo_violin.suptitle(
+
+                (
+                    "MROO Matrix-Memory "
+                    "Hyperparameter Distributions "
+                    f"(beta={BETA:g}, "
+                    f"m={M:g}, "
+                    f"T={WINDOW_SIZE})"
+                ),
+
+                fontsize=14,
+
+                fontweight="bold",
+            )
+
+
+            fig_mroo_violin.subplots_adjust(
+
+                left=0.06,
+
+                right=0.99,
+
+                bottom=0.39,
+
+                top=0.88,
+
+                wspace=0.28,
+            )
+
+
+            MROO_VIOLIN_FILE = (
+
+                SETTING_DIR
+
+                /
+                (
+                    "mroo_matrix_memory_tuning_violin"
+                    f"_beta_{BETA:g}"
+                    f"_m_{M:g}"
+                    f"_T_{WINDOW_SIZE}.png"
+                )
+            )
+
+
+            fig_mroo_violin.savefig(
+
+                MROO_VIOLIN_FILE,
+
+                dpi=300,
+
+                bbox_inches="tight",
+            )
+
+
+# ============================================================
+# 29. FINAL OUTPUT
+# ============================================================
 
 print(
-
     "\n========================================"
-
 )
 
-
-
 print(
-
-    "MROO TUNING PLOT SAVED"
-
+    "PLOTTING COMPLETE"
 )
 
-
-
 print(
-
     "========================================"
-
 )
-
 
 
 print(
+    "\nSelected-config boxplot:"
+)
 
-    MROO_TUNING_OUTPUT_FILE
-
+print(
+    ALGORITHM_BOXPLOT_FILE
 )
 
 
+print(
+    "\nSelected-config violin plot:"
+)
+
+print(
+    ALGORITHM_VIOLIN_FILE
+)
 
 
+print(
+    "\nExact rows used for the plot:"
+)
 
-# ============================================================
+print(
+    SELECTED_RESULT_FILE
+)
 
-# 33. SHOW BOTH FIGURES
 
-# ============================================================
+print(
+    "\nSelected configuration summary:"
+)
 
+print(
+    SELECTED_SUMMARY_FILE
+)
+
+
+if (
+    "MROO_BOXPLOT_FILE"
+    in globals()
+):
+
+    print(
+        "\nMROO tuning boxplot:"
+    )
+
+    print(
+        MROO_BOXPLOT_FILE
+    )
+
+
+if (
+    "MROO_VIOLIN_FILE"
+    in globals()
+):
+
+    print(
+        "\nMROO tuning violin plot:"
+    )
+
+    print(
+        MROO_VIOLIN_FILE
+    )
 
 
 plt.show()

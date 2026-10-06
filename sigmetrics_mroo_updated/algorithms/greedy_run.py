@@ -1,6 +1,8 @@
 import os
 import sys
+
 from pathlib import Path
+
 from concurrent.futures import (
     ProcessPoolExecutor,
     as_completed,
@@ -32,10 +34,14 @@ if str(PROJECT_DIR) not in sys.path:
 
 
 # ============================================================
-# IMPORT GREEDY
+# IMPORTS
 # ============================================================
 
 from greedy import run_greedy
+
+from config import (
+    A_MATRICES,
+)
 
 
 # ============================================================
@@ -58,8 +64,10 @@ DEMAND_COLUMNS = [
 # ============================================================
 # RESULT DIRECTORY
 #
-# main_sweep.py sets MROO_RESULT_DIR separately for each
-# (beta, m) setting.
+# main_sweep.py supplies MROO_RESULT_DIR separately for each
+# beta / m setting.
+#
+# Greedy must write directly into that directory.
 # ============================================================
 
 DEFAULT_RESULT_DIR = (
@@ -89,13 +97,15 @@ print(
 # ============================================================
 # WINDOW CONFIGURATION
 #
-# Same 100-window experiment used by all algorithms.
+# 1-minute slots:
+#
+# 24 hours * 60 = 1440
 # ============================================================
 
 WINDOW_SIZE = int(
     os.environ.get(
         "MROO_WINDOW_SIZE",
-        "8640",
+        "1440",
     )
 )
 
@@ -117,13 +127,7 @@ RANDOM_SEED = int(
 # ============================================================
 # SHARED WINDOW FILE
 #
-# EXACT SAME file used by:
-#
-#   MROO
-#   S-MROO-MAX
-#   S-MROO-SUM
-#   OFFLINE-OPT
-#   GREEDY
+# Same window definitions used by all algorithms.
 # ============================================================
 
 WINDOW_FILE = (
@@ -175,24 +179,20 @@ def load_demand():
         DATA_FILE
     )
 
-    demand = data[
-        DEMAND_COLUMNS
-    ].to_numpy(
-        dtype=float
+    demand = (
+        data[
+            DEMAND_COLUMNS
+        ]
+        .to_numpy(
+            dtype=float
+        )
     )
 
     return demand
 
 
 # ============================================================
-# CREATE / LOAD SHARED PAPER-STYLE WINDOWS
-#
-# Same logic used by the updated runners:
-#
-#   exact full-day windows
-#   + remaining randomly sampled continuous 24-hour windows
-#
-# No artificial 1-hour minimum separation.
+# CREATE / LOAD SHARED WINDOWS
 # ============================================================
 
 def get_window_starts(
@@ -200,7 +200,7 @@ def get_window_starts(
 ):
 
     # --------------------------------------------------------
-    # Reuse existing shared file
+    # Reuse existing shared windows
     # --------------------------------------------------------
 
     if WINDOW_FILE.exists():
@@ -217,7 +217,8 @@ def get_window_starts(
 
         missing = (
             required_columns
-            - set(
+            -
+            set(
                 window_df.columns
             )
         )
@@ -229,13 +230,18 @@ def get_window_starts(
                 f"{sorted(missing)}"
             )
 
-        starts = window_df[
-            "start_index"
-        ].to_numpy(
-            dtype=int
+        starts = (
+            window_df[
+                "start_index"
+            ]
+            .to_numpy(
+                dtype=int
+            )
         )
 
-        if len(starts) != N_WINDOWS:
+        if len(
+            starts
+        ) != N_WINDOWS:
 
             raise RuntimeError(
                 f"Expected {N_WINDOWS} windows, "
@@ -244,7 +250,9 @@ def get_window_starts(
             )
 
         if np.any(
-            starts + WINDOW_SIZE > T_full
+            starts
+            + WINDOW_SIZE
+            > T_full
         ):
 
             raise RuntimeError(
@@ -264,7 +272,7 @@ def get_window_starts(
 
 
     # --------------------------------------------------------
-    # Validate configuration
+    # Validate requested window configuration
     # --------------------------------------------------------
 
     if WINDOW_SIZE > T_full:
@@ -285,60 +293,68 @@ def get_window_starts(
         raise ValueError(
             f"Requested {N_WINDOWS} windows, "
             f"but only {total_valid_windows} valid "
-            f"starts exist."
+            "starts exist."
         )
 
 
     # --------------------------------------------------------
-    # Exact full-day windows
+    # Exact non-overlapping windows first
     # --------------------------------------------------------
 
-    number_of_full_days = (
+    number_of_full_windows = (
         T_full
         // WINDOW_SIZE
     )
 
-    exact_day_starts = (
+    exact_starts = (
         np.arange(
-            number_of_full_days,
+            number_of_full_windows,
             dtype=int,
         )
         * WINDOW_SIZE
     )
 
-    exact_day_starts = (
-        exact_day_starts[
+    exact_starts = (
+        exact_starts[
             :min(
-                len(exact_day_starts),
+                len(
+                    exact_starts
+                ),
                 N_WINDOWS,
             )
         ]
     )
 
     selected = list(
-        exact_day_starts.astype(int)
+        exact_starts.astype(
+            int
+        )
     )
 
 
     # --------------------------------------------------------
-    # Remaining sampled windows
+    # Remaining random continuous windows
     # --------------------------------------------------------
 
     all_valid_starts = np.arange(
         0,
-        T_full - WINDOW_SIZE + 1,
+        T_full
+        - WINDOW_SIZE
+        + 1,
         dtype=int,
     )
 
     candidate_starts = np.setdiff1d(
         all_valid_starts,
-        exact_day_starts,
+        exact_starts,
         assume_unique=False,
     )
 
     remaining_needed = (
         N_WINDOWS
-        - len(selected)
+        - len(
+            selected
+        )
     )
 
     rng = np.random.default_rng(
@@ -354,8 +370,11 @@ def get_window_starts(
         )
 
         selected.extend(
-            sampled_starts.astype(int)
+            sampled_starts.astype(
+                int
+            )
         )
+
 
     starts = np.asarray(
         selected,
@@ -368,8 +387,10 @@ def get_window_starts(
     # --------------------------------------------------------
 
     window_types = (
-        ["exact_day"]
-        * len(exact_day_starts)
+        ["exact"]
+        * len(
+            exact_starts
+        )
         +
         ["sampled"]
         * remaining_needed
@@ -387,7 +408,8 @@ def get_window_starts(
                 starts,
 
             "end_index":
-                starts + WINDOW_SIZE,
+                starts
+                + WINDOW_SIZE,
 
             "window_type":
                 window_types,
@@ -405,7 +427,7 @@ def get_window_starts(
     )
 
     print(
-        "\nCreated shared paper-style windows:"
+        "\nCreated shared windows:"
     )
 
     print(
@@ -413,8 +435,10 @@ def get_window_starts(
     )
 
     print(
-        "Exact-day windows =",
-        len(exact_day_starts),
+        "Exact windows =",
+        len(
+            exact_starts
+        ),
     )
 
     print(
@@ -435,18 +459,24 @@ def run_single_job(
     start,
 ):
 
-    start = int(start)
+    start = int(
+        start
+    )
 
     end = (
         start
         + WINDOW_SIZE
     )
 
-    window_demand = demand[
-        start:end
-    ]
+    window_demand = (
+        demand[
+            start:end
+        ]
+    )
 
-    if len(window_demand) != WINDOW_SIZE:
+    if len(
+        window_demand
+    ) != WINDOW_SIZE:
 
         raise RuntimeError(
             f"Window {window_id} contains "
@@ -457,6 +487,16 @@ def run_single_job(
 
     # --------------------------------------------------------
     # Run Greedy
+    #
+    # greedy.py now evaluates memory as:
+    #
+    # d_{t,i}
+    # =
+    # beta / 2
+    # *
+    # ||A_i(u_t-u_{t-1})||_2^2
+    #
+    # Greedy's action itself still minimizes hitting cost only.
     # --------------------------------------------------------
 
     result = run_greedy(
@@ -465,13 +505,15 @@ def run_single_job(
 
 
     # --------------------------------------------------------
-    # One comparable result row
+    # Comparable result row
     # --------------------------------------------------------
 
     return {
 
         "window_id":
-            int(window_id),
+            int(
+                window_id
+            ),
 
         "start_index":
             start,
@@ -515,9 +557,48 @@ def main():
     # LOAD FULL TRACE
     # ========================================================
 
-    demand = load_demand()
+    demand = (
+        load_demand()
+    )
 
-    T_FULL, D = demand.shape
+    (
+        T_FULL,
+        D,
+    ) = (
+        demand.shape
+    )
+
+
+    # ========================================================
+    # VALIDATE MATRIX-BASED MEMORY CONFIGURATION
+    #
+    # Exactly D matrices are required:
+    #
+    #     A_1, ..., A_D
+    #
+    # and every A_i is D x D.
+    #
+    # Therefore:
+    #
+    #     A_MATRICES.shape = (D, D, D)
+    # ========================================================
+
+    a_matrices = np.asarray(
+        A_MATRICES,
+        dtype=float,
+    )
+
+    if a_matrices.shape != (
+        D,
+        D,
+        D,
+    ):
+
+        raise ValueError(
+            "A_MATRICES must have shape "
+            f"({D}, {D}, {D}), "
+            f"but got {a_matrices.shape}."
+        )
 
 
     print(
@@ -525,7 +606,7 @@ def main():
     )
 
     print(
-        "PAPER-STYLE GREEDY WINDOW EXPERIMENT"
+        "GREEDY MATRIX-MEMORY WINDOW EXPERIMENT"
     )
 
     print(
@@ -538,8 +619,13 @@ def main():
     )
 
     print(
-        "Dimension =",
+        "Dimension D =",
         D,
+    )
+
+    print(
+        "A_MATRICES shape =",
+        a_matrices.shape,
     )
 
     print(
@@ -557,8 +643,10 @@ def main():
     # SAME WINDOWS AS ALL OTHER ALGORITHMS
     # ========================================================
 
-    window_starts = get_window_starts(
-        T_full=T_FULL
+    window_starts = (
+        get_window_starts(
+            T_full=T_FULL
+        )
     )
 
 
@@ -578,8 +666,12 @@ def main():
 
         jobs.append(
             (
-                int(window_id),
-                int(start),
+                int(
+                    window_id
+                ),
+                int(
+                    start
+                ),
             )
         )
 
@@ -633,10 +725,11 @@ def main():
 
     results = []
 
-    with ProcessPoolExecutor(
-        max_workers=worker_count
-    ) as executor:
 
+    with ProcessPoolExecutor(
+        max_workers=
+            worker_count
+    ) as executor:
 
         future_to_job = {}
 
@@ -646,14 +739,12 @@ def main():
             start,
         ) in jobs:
 
-
             future = executor.submit(
                 run_single_job,
                 demand,
                 window_id,
                 start,
             )
-
 
             future_to_job[
                 future
@@ -670,18 +761,21 @@ def main():
             future_to_job
         ):
 
-
             (
                 window_id,
                 start,
-            ) = future_to_job[
-                future
-            ]
+            ) = (
+                future_to_job[
+                    future
+                ]
+            )
 
 
             try:
 
-                row = future.result()
+                row = (
+                    future.result()
+                )
 
 
             except Exception as error:
@@ -736,12 +830,24 @@ def main():
 
 
             # ------------------------------------------------
-            # Save partial progress continuously
+            # Save partial progress
             # ------------------------------------------------
 
-            pd.DataFrame(
+            partial_df = pd.DataFrame(
                 results
-            ).to_csv(
+            )
+
+            partial_df = (
+                partial_df
+                .sort_values(
+                    "window_id"
+                )
+                .reset_index(
+                    drop=True
+                )
+            )
+
+            partial_df.to_csv(
                 RESULT_FILE,
                 index=False,
             )
@@ -757,15 +863,28 @@ def main():
 
     results_df = (
         results_df
+
         .sort_values(
             by=[
                 "window_id",
             ]
         )
+
         .reset_index(
             drop=True
         )
     )
+
+
+    if len(
+        results_df
+    ) != N_WINDOWS:
+
+        raise RuntimeError(
+            f"Expected {N_WINDOWS} Greedy windows, "
+            f"found {len(results_df)}."
+        )
+
 
     results_df.to_csv(
         RESULT_FILE,
@@ -774,16 +893,18 @@ def main():
 
 
     # ========================================================
-    # SUMMARY ACROSS SAME 100 WINDOWS
+    # SUMMARY ACROSS WINDOWS
     # ========================================================
 
     summary_df = pd.DataFrame(
         {
+
             "n_windows": [
                 len(
                     results_df
                 )
             ],
+
 
             "mean_hitting_cost": [
                 results_df[
@@ -791,11 +912,13 @@ def main():
                 ].mean()
             ],
 
+
             "std_hitting_cost": [
                 results_df[
                     "hitting_cost"
                 ].std()
             ],
+
 
             "mean_long_term_cost": [
                 results_df[
@@ -803,11 +926,13 @@ def main():
                 ].mean()
             ],
 
+
             "std_long_term_cost": [
                 results_df[
                     "long_term_cost"
                 ].std()
             ],
+
 
             "mean_total_cost": [
                 results_df[
@@ -815,11 +940,13 @@ def main():
                 ].mean()
             ],
 
+
             "std_total_cost": [
                 results_df[
                     "total_cost"
                 ].std()
             ],
+
 
             "median_total_cost": [
                 results_df[
@@ -827,11 +954,13 @@ def main():
                 ].median()
             ],
 
+
             "min_total_cost": [
                 results_df[
                     "total_cost"
                 ].min()
             ],
+
 
             "max_total_cost": [
                 results_df[
@@ -840,6 +969,7 @@ def main():
             ],
         }
     )
+
 
     summary_df.to_csv(
         SUMMARY_FILE,
@@ -863,6 +993,7 @@ def main():
         "========================================"
     )
 
+
     print(
         "\nSummary across windows:\n"
     )
@@ -872,6 +1003,7 @@ def main():
             index=False
         )
     )
+
 
     print(
         "\n========================================"
@@ -885,6 +1017,7 @@ def main():
         "========================================"
     )
 
+
     print(
         "\nShared window definitions:"
     )
@@ -893,6 +1026,7 @@ def main():
         WINDOW_FILE
     )
 
+
     print(
         "\nPer-window Greedy results:"
     )
@@ -900,6 +1034,7 @@ def main():
     print(
         RESULT_FILE
     )
+
 
     print(
         "\nSummary:"
